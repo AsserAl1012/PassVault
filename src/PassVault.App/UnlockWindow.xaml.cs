@@ -199,6 +199,16 @@ public partial class UnlockWindow : Window
         });
     }
 
+    private void OnRecovery(object sender, RoutedEventArgs e)
+    {
+        _watchStick.Stop();
+
+        var recovery = new RecoveryWindow();
+        Application.Current.MainWindow = recovery;
+        recovery.Show();
+        Close();
+    }
+
     private void OnUsePhraseInstead(object sender, RoutedEventArgs e)
     {
         _midFlow = true;

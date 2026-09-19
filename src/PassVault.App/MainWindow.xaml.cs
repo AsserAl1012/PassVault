@@ -217,8 +217,7 @@ public partial class MainWindow : Window
         try
         {
             var saved = VaultFile.Save(VaultStorage.ReadVault(_stickRoot), _masterKey, _all);
-            VaultStorage.WriteVault(_stickRoot, saved);
-            MachineStore.WriteMirrorVault(MachineStore.DefaultFolder, saved);
+            Enrolment.SaveVault(MachineStore.DefaultFolder, _stickRoot, saved);
             return true;
         }
         catch (Exception ex)
@@ -273,6 +272,52 @@ public partial class MainWindow : Window
         }
 
         _lastCopied = null;
+    }
+
+    // ---- backing up ----
+
+    /// <summary>
+    /// The backup is just the encrypted vault. That file plus your 12 words is a complete
+    /// recovery - no stick, no PC needed. Safe in a cloud folder because it is encrypted,
+    /// but copying the whole stick there would NOT be: that hands over the USB secret too.
+    /// </summary>
+    private void OnBackup(object sender, RoutedEventArgs e)
+    {
+        byte[] vault;
+        try
+        {
+            vault = VaultStorage.ReadVault(_stickRoot);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not read your vault.\n\n{ex.Message}", "PassVault",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var picker = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save a backup of your vault",
+            Filter = "PassVault backup (*.pv)|*.pv",
+            FileName = Recovery.SuggestBackupName(vault, DateTime.Now),
+        };
+        if (picker.ShowDialog() != true) return;
+
+        try
+        {
+            Recovery.ExportBackup(vault, picker.FileName);
+            MessageBox.Show(
+                "Backup saved.\n\nThis file plus your 12 words gets everything back, with no stick and no PC.\n\n"
+                + "It is encrypted, so a cloud folder is fine. Do not copy the whole stick there though - "
+                + "that would hand over the USB secret as well.",
+                "PassVault", MessageBoxButton.OK, MessageBoxImage.Information);
+            Toast("Backup saved");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not save the backup.\n\n{ex.Message}", "PassVault",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     // ---- locking ----

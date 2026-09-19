@@ -258,6 +258,51 @@ public class MachineTests : IDisposable
     // ---- putting an old vault back ----
 
     [Fact]
+    public void Saving_and_then_putting_the_old_copy_straight_back_is_refused()
+    {
+        // The real shape of the attack: you unlock once, save some changes, and someone
+        // swaps the old file back while you are still logged in. There is no second unlock
+        // in between, so saving MUST be what records how new the vault is.
+        Enrol();
+        var original = VaultStorage.ReadVault(_stick);
+        var masterKey = Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey;
+
+        Enrolment.SaveVault(_pc, _stick, VaultFile.Save(original, masterKey, [new Entry { Name = "bank.com", Password = "rotated" }]));
+
+        VaultStorage.WriteVault(_stick, original);
+
+        var error = Assert.Throws<UnlockException>(() => Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret));
+        Assert.Contains("older than", error.Message);
+    }
+
+    [Fact]
+    public void Saving_records_how_new_the_vault_is()
+    {
+        Enrol();
+        var masterKey = Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey;
+        var before = MachineStore.Read(_pc).HighestRevisionSeen;
+
+        Enrolment.SaveVault(_pc, _stick, VaultFile.Save(VaultStorage.ReadVault(_stick), masterKey, [new Entry { Name = "a.com" }]));
+
+        Assert.Equal(before + 1, MachineStore.Read(_pc).HighestRevisionSeen);
+    }
+
+    [Fact]
+    public void The_note_of_how_new_the_vault_is_never_moves_backwards()
+    {
+        Enrol();
+        var machine = MachineStore.Read(_pc);
+        machine.HighestEpochSeen = 3;
+        machine.HighestRevisionSeen = 40;
+        MachineStore.Write(_pc, machine);
+
+        Enrolment.NoteHowNew(_pc, new VaultHeader { Epoch = 2, Revision = 9 });
+
+        Assert.Equal(3, MachineStore.Read(_pc).HighestEpochSeen);
+        Assert.Equal(40, MachineStore.Read(_pc).HighestRevisionSeen);
+    }
+
+    [Fact]
     public void An_older_vault_on_the_stick_is_refused()
     {
         Enrol();

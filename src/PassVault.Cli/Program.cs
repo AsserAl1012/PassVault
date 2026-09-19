@@ -206,8 +206,7 @@ static int Add(string root)
     });
 
     var saved = VaultFile.Save(vault, masterKey, entries);
-    VaultStorage.WriteVault(root, saved);
-    MachineStore.WriteMirrorVault(MachineStore.DefaultFolder, saved);
+    Enrolment.SaveVault(MachineStore.DefaultFolder, root, saved);
 
     Console.WriteLine($"\nSaved. {entries.Count(e => !e.Deleted)} credential(s), on the stick and in the spare copy here.");
     return 0;

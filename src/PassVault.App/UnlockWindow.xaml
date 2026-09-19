@@ -132,7 +132,11 @@
         </Grid>
 
         <!-- messages -->
-        <TextBlock Grid.Row="3" x:Name="Message" TextWrapping="Wrap" TextAlignment="Center"
-                   FontSize="12" Foreground="{StaticResource Bad}" MinHeight="34"/>
+        <StackPanel Grid.Row="3">
+            <TextBlock x:Name="Message" TextWrapping="Wrap" TextAlignment="Center"
+                       FontSize="12" Foreground="{StaticResource Bad}" MinHeight="34"/>
+            <Button Style="{StaticResource Quiet}" Content="Stick lost, stolen or broken?"
+                    FontSize="12" HorizontalAlignment="Center" Click="OnRecovery"/>
+        </StackPanel>
     </Grid>
 </Window>

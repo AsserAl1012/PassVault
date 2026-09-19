@@ -152,6 +152,36 @@ public static class Enrolment
     }
 
     /// <summary>
+    /// Save the vault everywhere it belongs: the stick, the spare copy on this PC, and the
+    /// note of how new it is.
+    ///
+    /// Always save through here. Writing the stick directly leaves this machine still
+    /// thinking the newest vault it has seen is the older one, and then putting that older
+    /// copy back would slip past the rollback check.
+    /// </summary>
+    public static void SaveVault(string folder, string stickRoot, byte[] vault)
+    {
+        VaultStorage.WriteVault(stickRoot, vault);
+        MachineStore.WriteMirrorVault(folder, vault);
+        NoteHowNew(folder, VaultFile.ReadHeader(vault));
+    }
+
+    /// <summary>Remember the newest vault this machine has seen. Never moves backwards.</summary>
+    public static void NoteHowNew(string folder, VaultHeader header)
+    {
+        if (!MachineStore.IsEnrolled(folder)) return;
+
+        var machine = MachineStore.Read(folder);
+        bool newer = header.Epoch > machine.HighestEpochSeen
+                     || (header.Epoch == machine.HighestEpochSeen && header.Revision > machine.HighestRevisionSeen);
+        if (!newer) return;
+
+        machine.HighestEpochSeen = header.Epoch;
+        machine.HighestRevisionSeen = header.Revision;
+        MachineStore.Write(folder, machine);
+    }
+
+    /// <summary>
     /// How long to wait before letting the next PIN try through. The real protection is this
     /// machine's TPM secret, not this counter - the wait is just here to make guessing at
     /// the keyboard pointless.
@@ -177,7 +207,7 @@ public static class Enrolment
                 : $"{which} is not plugged in. Plug it in and try again.");
     }
 
-    private static byte[] OpenWithPhraseOrExplain(byte[] vault, string phrase)
+    internal static byte[] OpenWithPhraseOrExplain(byte[] vault, string phrase)
     {
         if (!Mnemonic.TryParse(phrase, out _, out var problem))
             throw new UnlockException(problem);

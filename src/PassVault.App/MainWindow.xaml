@@ -43,7 +43,10 @@
 
             <Button Grid.Column="1" Style="{StaticResource Primary}" Content="Add credential"
                     Margin="12,0,8,0" Click="OnAdd"/>
-            <Button Grid.Column="2" Content="Lock" Click="OnLock"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Content="Back up" Margin="0,0,8,0" Click="OnBackup"/>
+                <Button Content="Lock" Click="OnLock"/>
+            </StackPanel>
         </Grid>
 
         <!-- ================= list + details ================= -->
