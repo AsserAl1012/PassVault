@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The shared vector file the Swift tests read too. -->
+    <None Include="..\..\tests\vectors.json" Link="vectors.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PassVault.Core\PassVault.Core.csproj" />
   </ItemGroup>
 

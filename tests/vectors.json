@@ -1,0 +1,60 @@
+{
+  "note": "Frozen cross-platform test vectors. The C# tests and the Swift tests both read this file. If the two apps ever drift apart, these catch it. Do not regenerate - that would mean the format changed.",
+  "kdf": {
+    "algo": "argon2id",
+    "iterations": 3,
+    "memoryKiB": 65536,
+    "memoryBytesForLibsodium": 67108864,
+    "parallelism": 1,
+    "outputBytes": 32
+  },
+  "mnemonic": [
+    {
+      "entropyHex": "00000000000000000000000000000000",
+      "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    },
+    {
+      "entropyHex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+      "phrase": "legal winner thank year wave sausage worth useful legal winner thank yellow"
+    },
+    {
+      "entropyHex": "80808080808080808080808080808080",
+      "phrase": "letter advice cage absurd amount doctor acoustic avoid letter advice cage above"
+    },
+    {
+      "entropyHex": "ffffffffffffffffffffffffffffffff",
+      "phrase": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"
+    }
+  ],
+  "normalise": [
+    {
+      "input": "  ABANDON   abandon\tAbout ",
+      "output": "abandon abandon about"
+    },
+    {
+      "input": "Zoo\r\nzoo  ZOO",
+      "output": "zoo zoo zoo"
+    }
+  ],
+  "argon2id": {
+    "secretHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "saltHex": "504173735661756c745465737453616c",
+    "expectedKeyHex": "61ff2a14936153d460e8fb70ac509e35229cd9b30d9e741ed0aabd31f6ecd70c"
+  },
+  "aead": {
+    "comment": "blobHex is nonce(12) || ciphertext || tag(16). Open it and you must get plaintext back.",
+    "keyHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+    "aadUtf8": "pv1:slot:recovery:AAAAAAAAAAAAAAAAAAAAAA==",
+    "plaintextUtf8": "the quick brown fox",
+    "blobHex": "000000000000000000000001c7c61611e3d38d227baaebbbe394034db53752429cca1b829aa6efbe8d1a3c517a5ef8"
+  },
+  "pinSlot": {
+    "comment": "pinInputHex is usbSecret(32) || deviceSecret(32) || 4 ascii digits, plain concatenation.",
+    "usbSecretHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "deviceSecretHex": "2222222222222222222222222222222222222222222222222222222222222222",
+    "pin": "4821",
+    "pinInputHex": "1111111111111111111111111111111111111111111111111111111111111111222222222222222222222222222222222222222222222222222222222222222234383231",
+    "saltHex": "504173735661756c745465737453616c",
+    "expectedKeyHex": "fa5aec6020faeb9b764c39ec5e2e47af78407d99e301fad48a07b89b6690b849"
+  }
+}
