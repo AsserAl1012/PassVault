@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+
+# never commit a real vault or key material
+*.vault
+*.key
+*.pvkey
+secrets/
