@@ -20,6 +20,10 @@ src/PassVault.Core/        all the logic, no screens
   Crypto/KeyWrap.cs        locking the master key away, one way in per slot
   Model/Entry.cs           one saved credential
   Vault/VaultFile.cs       reading and writing vault.pv
+  Usb/Keyfile.cs           the little file on the stick
+  Usb/UsbDetect.cs         finding plugged-in sticks
+  Usb/VaultStorage.cs      reading and writing the stick safely
+src/PassVault.Cli/         console tool to drive it until the window exists
 src/PassVault.Tests/       the tests
 ```
 
@@ -32,7 +36,7 @@ dotnet test
 ## Progress
 
 - [x] **Step 1** — crypto core: master key, 12-word phrase, AES-256-GCM vault, PIN wrapping
-- [ ] **Step 2** — find the USB stick, write the keyfile, bind a stick to a vault
+- [x] **Step 2** — find the USB stick, write the keyfile, bind a stick to a vault
 - [ ] **Step 3** — the machine file: TPM device secret, PIN setup and unlock, attempt limit
 - [ ] **Step 4** — the app window: list, search, add and edit credentials
 - [ ] **Step 5** — re-key after a theft, backup export, rollback refusal
@@ -41,10 +45,17 @@ dotnet test
 
 ## What works right now
 
-Step 1 only — there is no window yet. The core can:
+Steps 1 and 2 — there is no window yet, but the console tool does the lot:
+
+```bash
+dotnet run --project src/PassVault.Cli -- find
+dotnet run --project src/PassVault.Cli -- init E:dotnet run --project src/PassVault.Cli -- add E:dotnet run --project src/PassVault.Cli -- list E:```
 
 - make a new vault with a random master key and a 12-word phrase
 - lock that master key away behind the phrase, and behind USB + machine + PIN
-- save and reload credentials, encrypted
+- find plugged-in sticks, set one up, save and reload credentials on it
+- survive the stick being pulled out mid-save
 - spot a damaged file, an edited header, or an old vault being put back
 - re-key after a theft: new master key, new phrase, entries kept, old phrase dead
+
+The PIN is not wired up yet — that is step 3. For now the only way in is the 12 words.
