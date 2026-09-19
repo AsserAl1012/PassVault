@@ -49,7 +49,10 @@ Steps 1 and 2 — there is no window yet, but the console tool does the lot:
 
 ```bash
 dotnet run --project src/PassVault.Cli -- find
-dotnet run --project src/PassVault.Cli -- init E:dotnet run --project src/PassVault.Cli -- add E:dotnet run --project src/PassVault.Cli -- list E:```
+dotnet run --project src/PassVault.Cli -- init "E:\"
+dotnet run --project src/PassVault.Cli -- add "E:\"
+dotnet run --project src/PassVault.Cli -- list "E:\"
+```
 
 - make a new vault with a random master key and a 12-word phrase
 - lock that master key away behind the phrase, and behind USB + machine + PIN
