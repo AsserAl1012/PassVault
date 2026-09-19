@@ -1,33 +1,52 @@
+using PassVault.Core.Machine;
 using PassVault.Core.Model;
 using PassVault.Core.Usb;
 using PassVault.Core.Vault;
 
 // A small console tool to drive the core while there is no window yet.
-// The PIN is not here - that arrives in step 3, along with the machine file and the TPM.
-// For now the only way in is the 12-word phrase.
 
-return (args.Length == 0 ? "help" : args[0].ToLowerInvariant()) switch
+try
 {
-    "find" => Find(),
-    "init" => Init(Drive(args)),
-    "status" => Status(Drive(args)),
-    "list" => List(Drive(args)),
-    "add" => Add(Drive(args)),
-    _ => Help(),
-};
+    return (args.Length == 0 ? "help" : args[0].ToLowerInvariant()) switch
+    {
+        "find" => Find(),
+        "init" => Init(Drive(args)),
+        "enrol" or "enroll" => Enrol(Drive(args)),
+        "status" => Status(Drive(args)),
+        "list" => List(Drive(args)),
+        "add" => Add(Drive(args)),
+        "forget" => Forget(),
+        _ => Help(),
+    };
+}
+catch (UnlockException ex)
+{
+    Console.WriteLine($"\n{ex.Message}");
+    return 1;
+}
+catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException or InvalidDataException or ArgumentException)
+{
+    Console.WriteLine($"\n{ex.Message}");
+    return 1;
+}
 
 static int Help()
 {
     Console.WriteLine("""
-        PassVault - step 2 (no window yet)
+        PassVault - steps 1 to 3 (no window yet)
 
           find              show every USB stick Windows can read
           init   <drive>    set up a fresh stick, prints your 12 words
-          status <drive>    what is on that stick
-          list   <drive>    unlock with your 12 words and show your credentials
-          add    <drive>    unlock and add one credential
+          enrol  <drive>    set this PC up: 12 words once, then choose a PIN
+          status <drive>    what is on that stick, and how this PC is set up
+          list   <drive>    open the vault and show your credentials
+          add    <drive>    open the vault and add one credential
+          forget            undo this PC's setup (the vault is untouched)
 
-        Example:  PassVault.Cli init E:\
+        Once this PC is set up, list and add ask for your PIN.
+        Before that, and any time the PIN is locked out, they ask for your 12 words.
+
+        Example:  PassVault.Cli enrol "E:\"
         """);
     return 0;
 }
@@ -61,41 +80,96 @@ static int Init(string root)
 
     Console.WriteLine($"Set up {root}  (stick {keyfile.ShortId})\n");
     Console.WriteLine("YOUR 12-WORD RECOVERY PHRASE - write it down now, on paper:\n");
-
-    var words = phrase.Split(' ');
-    for (int i = 0; i < words.Length; i += 4)
-        Console.WriteLine("   " + string.Join("  ", words.Skip(i).Take(4).Select((w, j) => $"{i + j + 1,2}. {w,-9}")));
-
+    PrintPhrase(phrase);
     Console.WriteLine("""
 
         This is shown once and is not stored anywhere. It is the only way back in
         if the stick is lost or broken. Anyone who reads it owns your passwords.
+
+        Next:  PassVault.Cli enrol <drive>
         """);
     return 0;
 }
 
-static int Status(string root)
+static int Enrol(string root)
 {
+    var folder = MachineStore.DefaultFolder;
+
+    if (MachineStore.IsEnrolled(folder))
+    {
+        Console.WriteLine("This PC is already set up. Run 'forget' first if you want to start again.");
+        return 1;
+    }
     if (!VaultStorage.IsSetUp(root))
     {
         Console.WriteLine($"{root} has no PassVault on it. Run:  PassVault.Cli init {root}");
         return 1;
     }
 
-    var keyfile = VaultStorage.ReadKeyfile(root);
-    var header = VaultFile.ReadHeader(VaultStorage.ReadVault(root));
+    Console.Write("Your 12 words: ");
+    var phrase = Console.ReadLine() ?? "";
 
-    Console.WriteLine($"  stick      {keyfile.ShortId}");
-    Console.WriteLine($"  vault      {header.VaultId}");
-    Console.WriteLine($"  epoch      {header.Epoch}   (goes up when you re-key after a theft)");
-    Console.WriteLine($"  revision   {header.Revision}   (goes up on every save)");
-    Console.WriteLine($"  ways in    {string.Join(", ", header.Slots.Select(s => s.Name))}");
+    var pin = NewPin();
+
+    var (deviceSecret, protection) = DeviceSecret.Load(folder);
+    var (machine, _) = Enrolment.Enrol(folder, root, phrase, pin, deviceSecret, protection);
+
+    Console.WriteLine($"\nThis PC is set up. From now on: stick in, PIN, done.");
+    Console.WriteLine($"  machine secret   {Describe(machine.Protection)}");
+    Console.WriteLine($"  spare vault      {MachineStore.MirrorVaultPathIn(folder)}");
+
+    if (machine.Protection == DeviceProtection.Dpapi)
+        Console.WriteLine("""
+
+            Heads up: no usable TPM was found, so this PC's secret is tied to your Windows
+            account instead of the chip. That is weaker - someone who can log in as you can
+            get it. Everything still works; it just leans more on the PIN.
+            """);
+
+    return 0;
+}
+
+static int Status(string root)
+{
+    if (VaultStorage.IsSetUp(root))
+    {
+        var keyfile = VaultStorage.ReadKeyfile(root);
+        var header = VaultFile.ReadHeader(VaultStorage.ReadVault(root));
+
+        Console.WriteLine("STICK");
+        Console.WriteLine($"  stick      {keyfile.ShortId}");
+        Console.WriteLine($"  vault      {header.VaultId}");
+        Console.WriteLine($"  epoch      {header.Epoch}   (goes up when you re-key after a theft)");
+        Console.WriteLine($"  revision   {header.Revision}   (goes up on every save)");
+        Console.WriteLine($"  ways in    {string.Join(", ", header.Slots.Select(s => s.Name))}");
+    }
+    else
+    {
+        Console.WriteLine($"STICK\n  {root} has no PassVault on it.");
+    }
+
+    var folder = MachineStore.DefaultFolder;
+    Console.WriteLine("\nTHIS PC");
+
+    if (!MachineStore.IsEnrolled(folder))
+    {
+        Console.WriteLine("  not set up. Run:  PassVault.Cli enrol <drive>");
+        return 0;
+    }
+
+    var machine = MachineStore.Read(folder);
+    Console.WriteLine($"  set up for      vault {machine.VaultId}, stick {machine.StickShortId}");
+    Console.WriteLine($"  machine secret  {Describe(machine.Protection)}");
+    Console.WriteLine($"  PIN             {(machine.PinDisabled ? "switched off - use your 12 words" : "on")}");
+    Console.WriteLine($"  wrong tries     {machine.FailedAttempts} of {Enrolment.MaxAttempts}");
+    Console.WriteLine($"  last seen       epoch {machine.HighestEpochSeen}, revision {machine.HighestRevisionSeen}");
+    Console.WriteLine($"  spare vault     {(MachineStore.HasMirrorVault(folder) ? "yes" : "MISSING")}");
     return 0;
 }
 
 static int List(string root)
 {
-    var (vault, masterKey) = Unlock(root);
+    var (vault, masterKey) = Open(root);
     var entries = VaultFile.ReadEntries(vault, masterKey).Where(e => !e.Deleted).ToList();
 
     if (entries.Count == 0)
@@ -118,38 +192,138 @@ static int List(string root)
 
 static int Add(string root)
 {
-    var (vault, masterKey) = Unlock(root);
+    var (vault, masterKey) = Open(root);
     var entries = VaultFile.ReadEntries(vault, masterKey);
 
     Console.WriteLine();
-    var entry = new Entry
+    entries.Add(new Entry
     {
         Name = Required("Website or app"),
         Username = Optional("Username"),
         Email = Optional("Email"),
         Password = Optional("Password"),
         Notes = Optional("Notes"),
-    };
-    entries.Add(entry);
+    });
 
-    VaultStorage.WriteVault(root, VaultFile.Save(vault, masterKey, entries));
-    Console.WriteLine($"\nSaved. {entries.Count(e => !e.Deleted)} credential(s) on this stick.");
+    var saved = VaultFile.Save(vault, masterKey, entries);
+    VaultStorage.WriteVault(root, saved);
+    MachineStore.WriteMirrorVault(MachineStore.DefaultFolder, saved);
+
+    Console.WriteLine($"\nSaved. {entries.Count(e => !e.Deleted)} credential(s), on the stick and in the spare copy here.");
     return 0;
 }
 
-// ---- helpers ----
-
-static (byte[] Vault, byte[] MasterKey) Unlock(string root)
+static int Forget()
 {
-    if (!VaultStorage.IsSetUp(root))
-        throw new InvalidOperationException($"{root} has no PassVault on it.");
+    var folder = MachineStore.DefaultFolder;
+    if (!MachineStore.IsEnrolled(folder))
+    {
+        Console.WriteLine("This PC is not set up.");
+        return 0;
+    }
 
-    var vault = VaultStorage.ReadVault(root);
+    Console.Write("This undoes the PIN setup on this PC. The vault on your stick is untouched. Type YES: ");
+    if (Console.ReadLine()?.Trim() != "YES")
+    {
+        Console.WriteLine("Left alone.");
+        return 1;
+    }
 
+    MachineStore.Forget(folder);
+    DeviceSecret.Forget(folder);
+    Console.WriteLine("Done. Set this PC up again whenever you like, with your 12 words.");
+
+    // Deliberately kept: it is a backup, and "undo my PIN" must never throw away a backup.
+    if (MachineStore.HasMirrorVault(folder))
+        Console.WriteLine($"\nThe spare copy of your vault is still here, and still needs your 12 words:\n  {MachineStore.MirrorVaultPathIn(folder)}");
+
+    return 0;
+}
+
+// ---- opening the vault ----
+
+static (byte[] Vault, byte[] MasterKey) Open(string root)
+{
+    var folder = MachineStore.DefaultFolder;
+
+    if (MachineStore.IsEnrolled(folder) && !MachineStore.Read(folder).PinDisabled)
+    {
+        var wait = Enrolment.DelayBeforeNextTry(MachineStore.Read(folder).FailedAttempts);
+        if (wait > TimeSpan.Zero)
+        {
+            Console.WriteLine($"Waiting {wait.TotalSeconds:0} seconds after earlier wrong tries...");
+            Thread.Sleep(wait);
+        }
+
+        var (deviceSecret, _) = DeviceSecret.Load(folder);
+        var pin = AskPin("PIN");
+        var (masterKey, _) = Enrolment.UnlockWithPin(folder, root, pin, deviceSecret);
+        return (VaultStorage.ReadVault(root), masterKey);
+    }
+
+    Console.WriteLine("This PC has no working PIN, so we need your 12 words.");
     Console.Write("Your 12 words: ");
     var phrase = Console.ReadLine() ?? "";
+    return (VaultStorage.ReadVault(root), Enrolment.UnlockWithPhrase(folder, root, phrase));
+}
 
-    return (vault, VaultFile.UnlockWithPhrase(vault, phrase));
+// ---- little helpers ----
+
+static string Describe(DeviceProtection protection) => protection switch
+{
+    DeviceProtection.Tpm => "sealed in this PC's TPM chip - it cannot leave this machine",
+    _ => "tied to your Windows account (no TPM found) - weaker",
+};
+
+static void PrintPhrase(string phrase)
+{
+    var words = phrase.Split(' ');
+    for (int i = 0; i < words.Length; i += 4)
+        Console.WriteLine("   " + string.Join("  ", words.Skip(i).Take(4).Select((w, j) => $"{i + j + 1,2}. {w,-9}")));
+}
+
+static string NewPin()
+{
+    while (true)
+    {
+        var first = AskPin("Choose a 4-digit PIN");
+        var again = AskPin("Type it again");
+        if (first == again) return first;
+        Console.WriteLine("  Those did not match. Try again.");
+    }
+}
+
+static string AskPin(string label)
+{
+    while (true)
+    {
+        Console.Write($"{label}: ");
+        var pin = ReadHidden();
+        if (pin.Length == 4 && pin.All(char.IsAsciiDigit)) return pin;
+        Console.WriteLine("  A PIN is exactly 4 digits.");
+    }
+}
+
+// Hide the PIN as it is typed, unless input is being piped in (a script or a test).
+static string ReadHidden()
+{
+    if (Console.IsInputRedirected) return Console.ReadLine() ?? "";
+
+    var typed = "";
+    while (true)
+    {
+        var key = Console.ReadKey(intercept: true);
+        if (key.Key == ConsoleKey.Enter) { Console.WriteLine(); return typed; }
+        if (key.Key == ConsoleKey.Backspace)
+        {
+            if (typed.Length > 0) { typed = typed[..^1]; Console.Write("\b \b"); }
+        }
+        else if (!char.IsControl(key.KeyChar))
+        {
+            typed += key.KeyChar;
+            Console.Write('*');
+        }
+    }
 }
 
 static string Drive(string[] args)

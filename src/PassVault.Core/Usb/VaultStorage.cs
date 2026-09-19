@@ -38,8 +38,8 @@ public static class VaultStorage
         var (file, masterKey, phrase) = VaultFile.Create();
         var keyfile = Keyfile.Create();
 
-        SafeWrite(VaultPathOn(root), file);
-        SafeWrite(KeyfilePathOn(root), keyfile.ToBytes());
+        WriteFileSafely(VaultPathOn(root), file);
+        WriteFileSafely(KeyfilePathOn(root), keyfile.ToBytes());
 
         Array.Clear(masterKey);
         return (phrase, keyfile);
@@ -72,9 +72,9 @@ public static class VaultStorage
         throw new FileNotFoundException("There is no vault on this drive.", path);
     }
 
-    public static void WriteVault(string root, byte[] file) => SafeWrite(VaultPathOn(root), file);
+    public static void WriteVault(string root, byte[] file) => WriteFileSafely(VaultPathOn(root), file);
 
-    private const string BackupSuffix = ".bak";
+    public const string BackupSuffix = ".bak";
     private const string TempSuffix = ".tmp";
 
     /// <summary>
@@ -82,7 +82,7 @@ public static class VaultStorage
     /// then put the new one in place - so pulling the stick out at the wrong moment leaves
     /// you with one good copy instead of half a file.
     /// </summary>
-    private static void SafeWrite(string path, byte[] bytes)
+    public static void WriteFileSafely(string path, byte[] bytes)
     {
         var temp = path + TempSuffix;
         var backup = path + BackupSuffix;

@@ -20,6 +20,9 @@ src/PassVault.Core/        all the logic, no screens
   Crypto/KeyWrap.cs        locking the master key away, one way in per slot
   Model/Entry.cs           one saved credential
   Vault/VaultFile.cs       reading and writing vault.pv
+  Machine/DeviceSecret.cs  this PC's 32-byte secret, sealed in the TPM
+  Machine/MachineFile.cs   machine.pvm - what this one PC knows
+  Machine/Enrolment.cs     setting a PC up, and the two ways to unlock
   Usb/Keyfile.cs           the little file on the stick
   Usb/UsbDetect.cs         finding plugged-in sticks
   Usb/VaultStorage.cs      reading and writing the stick safely
@@ -37,7 +40,7 @@ dotnet test
 
 - [x] **Step 1** — crypto core: master key, 12-word phrase, AES-256-GCM vault, PIN wrapping
 - [x] **Step 2** — find the USB stick, write the keyfile, bind a stick to a vault
-- [ ] **Step 3** — the machine file: TPM device secret, PIN setup and unlock, attempt limit
+- [x] **Step 3** — the machine file: TPM device secret, PIN setup and unlock, attempt limit
 - [ ] **Step 4** — the app window: list, search, add and edit credentials
 - [ ] **Step 5** — re-key after a theft, backup export, rollback refusal
 - [ ] **Step 6** — iPhone app (Face ID + PIN, read-only to start). Needs a Mac to build.
@@ -45,20 +48,27 @@ dotnet test
 
 ## What works right now
 
-Steps 1 and 2 — there is no window yet, but the console tool does the lot:
+Steps 1 to 3 — there is no window yet, but the console tool does the lot:
 
 ```bash
 dotnet run --project src/PassVault.Cli -- find
 dotnet run --project src/PassVault.Cli -- init "E:\"
+dotnet run --project src/PassVault.Cli -- enrol "E:\"
 dotnet run --project src/PassVault.Cli -- add "E:\"
 dotnet run --project src/PassVault.Cli -- list "E:\"
 ```
 
+**Setting up, once:** `init` makes the stick and prints your 12 words. `enrol` sets up this
+PC — you type the 12 words once and choose a PIN.
+
+**Every day after that:** stick in, PIN, done.
+
 - make a new vault with a random master key and a 12-word phrase
-- lock that master key away behind the phrase, and behind USB + machine + PIN
+- lock that master key away behind the phrase, and behind USB + this PC's chip + PIN
 - find plugged-in sticks, set one up, save and reload credentials on it
+- unlock with the PIN alone, with all three ingredients genuinely required
+- keep a spare copy of the encrypted vault on each PC, so a dead stick is not the end
+- count wrong PINs, make you wait longer each time, switch the PIN off after ten
 - survive the stick being pulled out mid-save
 - spot a damaged file, an edited header, or an old vault being put back
 - re-key after a theft: new master key, new phrase, entries kept, old phrase dead
-
-The PIN is not wired up yet — that is step 3. For now the only way in is the 12 words.
