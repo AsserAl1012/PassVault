@@ -26,7 +26,10 @@ src/PassVault.Core/        all the logic, no screens
   Usb/Keyfile.cs           the little file on the stick
   Usb/UsbDetect.cs         finding plugged-in sticks
   Usb/VaultStorage.cs      reading and writing the stick safely
-src/PassVault.Cli/         console tool to drive it until the window exists
+src/PassVault.App/         the Windows app (the window you actually use)
+  UnlockWindow.xaml        setup, PIN unlock, recovery
+  MainWindow.xaml          search, list, add and edit
+src/PassVault.Cli/         console tool, handy for scripting and testing
 src/PassVault.Tests/       the tests
 ```
 
@@ -41,14 +44,21 @@ dotnet test
 - [x] **Step 1** — crypto core: master key, 12-word phrase, AES-256-GCM vault, PIN wrapping
 - [x] **Step 2** — find the USB stick, write the keyfile, bind a stick to a vault
 - [x] **Step 3** — the machine file: TPM device secret, PIN setup and unlock, attempt limit
-- [ ] **Step 4** — the app window: list, search, add and edit credentials
+- [x] **Step 4** — the app window: list, search, add and edit credentials
 - [ ] **Step 5** — re-key after a theft, backup export, rollback refusal
 - [ ] **Step 6** — iPhone app (Face ID + PIN, read-only to start). Needs a Mac to build.
 - [ ] **Step 7** — sync server
 
 ## What works right now
 
-Steps 1 to 3 — there is no window yet, but the console tool does the lot:
+Run the app:
+
+```bash
+dotnet run --project src/PassVault.App
+```
+
+The window walks you through setting up a stick and this PC on first run. After that it is
+stick in, PIN, done. Everything is also scriptable from the console tool:
 
 ```bash
 dotnet run --project src/PassVault.Cli -- find
@@ -72,3 +82,5 @@ PC — you type the 12 words once and choose a PIN.
 - survive the stick being pulled out mid-save
 - spot a damaged file, an edited header, or an old vault being put back
 - re-key after a theft: new master key, new phrase, entries kept, old phrase dead
+- copy a username, email or password, with the clipboard wiped 20 seconds later
+- lock on demand, and lock itself after 5 minutes idle

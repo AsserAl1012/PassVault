@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PassVault.Core.Model;
 
 /// <summary>
@@ -25,6 +27,10 @@ public sealed class Entry
     public bool Deleted { get; set; }
 
     public static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    /// <summary>Who this login is for, for the list on screen. Never saved to the file.</summary>
+    [JsonIgnore]
+    public string Who => Username ?? Email ?? "";
 
     /// <summary>True if this entry matches what the user typed in the search box.</summary>
     public bool Matches(string search)
