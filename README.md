@@ -13,6 +13,7 @@ parts of the idea that don't work and what we do instead.
 ```
 DESIGN.md                  how it works - frozen, both apps follow it
 tests/vectors.json         fixed inputs and answers, read by the C# AND Swift tests
+tests/fixture-vault.pv     a real vault file both apps must open (fake data, public phrase)
 src/PassVault.Core/        all the logic, no screens
   Crypto/Aead.cs           AES-256-GCM
   Crypto/Kdf.cs            Argon2id settings and derivation
@@ -33,6 +34,7 @@ src/PassVault.App/         the Windows app (the window you actually use)
   RecoveryWindow.xaml      replacing a lost, stolen or broken stick
 src/PassVault.Cli/         console tool, handy for scripting and testing
 src/PassVault.Tests/       the tests
+ios/                       the iPhone app - see ios/README.md (needs a Mac to build)
 ```
 
 ## Run the tests
@@ -48,7 +50,7 @@ dotnet test
 - [x] **Step 3** — the machine file: TPM device secret, PIN setup and unlock, attempt limit
 - [x] **Step 4** — the app window: list, search, add and edit credentials
 - [x] **Step 5** — re-key after a theft, backup export, rollback refusal
-- [ ] **Step 6** — iPhone app (Face ID + PIN, read-only to start). Needs a Mac to build.
+- [~] **Step 6** — iPhone app: written and reviewed, **never compiled**. Needs a Mac. See [ios/README.md](ios/README.md)
 - [ ] **Step 7** — sync server
 
 ## What works right now

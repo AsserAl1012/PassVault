@@ -1,0 +1,40 @@
+{
+  "note": "A real vault file both apps must be able to open. Made-up data, public phrase - it exists only to prove the C# and Swift sides agree. Do not put anything real in it.",
+  "file": "fixture-vault.pv",
+  "phrase": "robot update wood buffalo behind later dismiss loyal brass trust eye shadow",
+  "vaultId": "6apJfqAW5BCJ9BqmflX/2A==",
+  "epoch": 1,
+  "revision": 2,
+  "entries": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "github.com",
+      "username": "fixture-user",
+      "email": null,
+      "password": "fixture-pass-1",
+      "notes": null,
+      "updatedAt": 1758240000000,
+      "deleted": false
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "bank.example",
+      "username": null,
+      "email": "fixture@example.com",
+      "password": "fixture-pass-2",
+      "notes": "second line\nwith a newline",
+      "updatedAt": 1758240001000,
+      "deleted": false
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "deleted.example",
+      "username": null,
+      "email": null,
+      "password": null,
+      "notes": null,
+      "updatedAt": 1758240002000,
+      "deleted": true
+    }
+  ]
+}

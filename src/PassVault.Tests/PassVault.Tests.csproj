@@ -21,6 +21,8 @@
   <ItemGroup>
     <!-- The shared vector file the Swift tests read too. -->
     <None Include="..\..\tests\vectors.json" Link="vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tests\fixture.json" Link="fixture.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tests\fixture-vault.pv" Link="fixture-vault.pv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

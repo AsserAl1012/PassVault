@@ -222,6 +222,19 @@ and if he ever gets your PIN and your PC, those old passwords are exposed.
   keypad-unlock model. On iOS the master key is held in the Keychain with access control
   `.biometryCurrentSet` and accessibility `WhenPasscodeSetThisDeviceOnly`, sync off. The
   PIN path uses a second 32-byte device secret in its own Keychain item.
+- **The phone's PIN slot is its own thing, and that's fine.** It lives only on the phone and
+  never goes into the vault file, so it doesn't have to match the Windows PIN slot — and it
+  can't, because there's no USB secret on a phone. It is:
+
+  ```
+  name  = "ios-pin"
+  input = deviceSecret(32) || pin as 4 ASCII digits(4)   <- 36 bytes, plain concatenation
+  key   = Argon2id(password = input, salt = slot salt)
+  blob  = Seal(key, masterKey, aad = "pv1:slot:ios-pin:<vaultId>:<deviceId>")
+  ```
+
+  Only the **recovery slot** travels inside `vault.pv`, so both platforms agree on the one
+  thing that has to be shared and nothing more.
 - **iOS ships read-only in v1.** It shows credentials; it doesn't edit them. That skips
   the whole merge problem until real sync is built.
 - Every entry carries a UUID, a last-changed time in milliseconds, and deletions are kept
