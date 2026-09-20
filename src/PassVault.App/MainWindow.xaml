@@ -1,6 +1,7 @@
 <Window x:Class="PassVault.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PassVault.App"
         Title="PassVault" Height="710" Width="1000" MinHeight="520" MinWidth="820"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Void}" FontFamily="{StaticResource UiFont}" FontSize="13"
@@ -223,22 +224,38 @@
 
                       <Border Grid.Row="1" BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
                               Padding="24,14">
-                          <StackPanel Orientation="Horizontal">
-                              <Button x:Name="SaveButton" Style="{StaticResource Primary}" Content="Save"
-                                      IsEnabled="False" Click="OnSave"/>
-                              <Button Content="Delete" Margin="8,0,0,0" Foreground="{StaticResource Danger}" Click="OnDelete"/>
-                          </StackPanel>
+                          <!-- The confirmation happens here, in place. It used to be a
+                               MessageBox: a light-grey Win32 dialog in the middle of a dark
+                               product, which is the single cheapest thing to get rid of. -->
+                          <Grid>
+                              <StackPanel x:Name="FooterNormal" Orientation="Horizontal">
+                                  <Button x:Name="SaveButton" Style="{StaticResource Primary}" Content="Save"
+                                          IsEnabled="False" Click="OnSave"/>
+                                  <Button Content="Delete" Margin="8,0,0,0"
+                                          Foreground="{StaticResource Danger}" Click="OnDeleteAsked"/>
+                              </StackPanel>
+
+                              <StackPanel x:Name="FooterConfirm" Orientation="Horizontal"
+                                          Visibility="Collapsed" Opacity="0">
+                                  <TextBlock x:Name="ConfirmText" VerticalAlignment="Center"
+                                             Margin="0,0,16,0"/>
+                                  <Button Style="{StaticResource Destructive}" Content="Delete for good"
+                                          Click="OnDeleteConfirmed"/>
+                                  <Button Style="{StaticResource Quiet}" Content="Cancel"
+                                          Margin="8,0,0,0" Click="OnDeleteCancelled"/>
+                              </StackPanel>
+                          </Grid>
                       </Border>
                     </Grid>
                 </Grid>
             </Border>
         </Grid>
 
-        <!-- ================= status line ================= -->
-        <Grid Grid.Row="2" Margin="20,12,20,12">
-            <TextBlock x:Name="StatusText" Foreground="{StaticResource Muted}" FontSize="12"/>
-            <TextBlock x:Name="ToastText" Foreground="{StaticResource Good}" FontSize="12"
-                       HorizontalAlignment="Right"/>
-        </Grid>
+        <!-- ================= the state band =================
+             Was a 12px grey line at the very bottom edge. The auto-lock now has a visible
+             countdown, because locking after five minutes with no warning at all is a
+             defect, not a design choice. -->
+        <local:StateBand x:Name="Band" Grid.Row="2" Height="46" Margin="18,14,18,16"
+                         Glyph="&#xE785;" State="Vault open" Mood="Good"/>
     </Grid>
 </Window>

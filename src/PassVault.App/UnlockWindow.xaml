@@ -1,6 +1,7 @@
 <Window x:Class="PassVault.App.UnlockWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PassVault.App"
         Title="PassVault" Height="600" Width="480"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         Background="{StaticResource Void}" FontFamily="{StaticResource UiFont}" FontSize="13"
@@ -16,23 +17,15 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Title -->
-        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,8,0,22">
-            <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" FontSize="34"
-                       Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/>
-            <TextBlock Text="PassVault" Style="{StaticResource Heading}"
-                       HorizontalAlignment="Center" Margin="0,10,0,0"/>
-        </StackPanel>
+        <!-- The name, small. The band below it is the thing that matters. -->
+        <TextBlock Grid.Row="0" Text="PASSVAULT" FontSize="12" FontWeight="SemiBold"
+                   Foreground="{StaticResource Muted}" HorizontalAlignment="Center"
+                   Margin="0,2,0,20"/>
 
-        <!-- Stick status -->
-        <Border Grid.Row="1" CornerRadius="4" Padding="14,11" Margin="0,0,0,22"
-                Background="{StaticResource Surface}" BorderBrush="{StaticResource Hairline}" BorderThickness="1">
-            <StackPanel Orientation="Horizontal">
-                <Ellipse x:Name="StickDot" Width="9" Height="9" Fill="{StaticResource Danger}"
-                         VerticalAlignment="Center" Margin="2,0,11,0"/>
-                <TextBlock x:Name="StickText" Text="Looking for your stick..." VerticalAlignment="Center"/>
-            </StackPanel>
-        </Border>
+        <!-- The state band: the largest thing on this screen, because which state you are in
+             is the only fact that decides whether the app can do anything at all. -->
+        <local:StateBand x:Name="Band" Grid.Row="1" Height="64" Margin="0,0,0,24"
+                         State="Looking for your stick..." Mood="Idle"/>
 
         <!-- ============ the body swaps between these ============ -->
         <Grid Grid.Row="2">
@@ -127,9 +120,11 @@
                 <Button Style="{StaticResource Quiet}" Content="Back to PIN" Margin="0,8,0,0" Click="OnBackToPin"/>
             </StackPanel>
 
-            <!-- busy -->
-            <StackPanel x:Name="BusyPanel" Visibility="Collapsed" VerticalAlignment="Center">
-                <TextBlock x:Name="BusyText" Text="Working..." Style="{StaticResource Sub}" TextAlignment="Center"/>
+            <!-- The unlock second. Top-aligned like every other panel - the old one was
+                 centred, so the content visibly leapt down the window as the wait began. -->
+            <StackPanel x:Name="BusyPanel" Visibility="Collapsed" VerticalAlignment="Top"
+                        Margin="0,28,0,0">
+                <local:LockMechanism x:Name="Mechanism"/>
             </StackPanel>
         </Grid>
 

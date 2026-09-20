@@ -85,27 +85,27 @@ Seven named entries. Anything not on this list does not animate.
 - [x] Type and icon pass
 - [x] Selection is grey plus a brass bar, not a blue wash
 - [x] Brass taken off "Add credential" — adding is not committing
+- [x] **The state band** — one control on the unlock and vault windows. Carries the glyph, a
+      state line, a detail line and a trailing slot, and is the only thing in the product that
+      changes background colour. It replaced both the unlock pill and the grey bottom line.
+- [x] **The auto-lock countdown.** The vault used to lock after 5 minutes with no warning at
+      all, and the idle timer only ticked every 20 seconds. It now ticks every second and
+      reads *"locks in 4:12"*, going brass in the last minute.
+- [x] **The unlock second.** A four-pin lock. Each pin seats on something that genuinely
+      happened; during Argon2 one pin breathes ±2px. Using the 12 words leaves the second pin
+      up on purpose — your phrase does not use this PC's chip, so it would be a lie to seat it.
+- [x] **Delete confirms in the footer**, cross-fading in place, backing out after 8 seconds of
+      no answer. Replaces a light-grey Win32 MessageBox in the middle of a dark product.
+- [x] **Message lifetimes.** A success clears itself after 4 seconds; anything you must act on
+      stays until you act; no timer ever clears an error.
 
 ## Still to do
 
-1. **The state band.** One component reused on all three windows: 64px on Unlock, 40px on
-   Vault, 48px on Recovery. It carries the lock glyph, the dot, a state line and a detail line,
-   and it is the only thing in the product that changes background colour. This replaces both
-   the unlock screen's pill and the vault's 12px grey bottom line.
-2. **The vault's auto-lock countdown.** It currently locks after 5 minutes with no warning at
-   all, and the idle timer only ticks every 20 seconds. The band should read *"locks in 4:12"*
-   and go brass at 60 seconds left.
-3. **Pin the unlock body to a fixed height.** `BusyPanel` is centred while the other seven
-   panels are top-aligned, so content visibly jumps down the window when a wait begins.
-   Measure the tallest panel at load rather than hard-coding — a fixed number would clip the
-   12-word grid at 150% scaling.
-4. **The unlock second.** A four-pin lock mechanism where each pin seats on a real event: your
-   stick, this PC's chip, your PIN, the vault. During Argon2 one pin breathes ±2px. Because
-   it is a loop with no start and no end it looks correct at 400ms and at 3 seconds — it is
-   structurally incapable of lying about progress, which a timed progress bar racing a job
-   with no callback would do every single time.
-5. **Delete confirmation in the footer**, not a light-grey Win32 `MessageBox` in the middle of
-   a dark product.
-6. **Message lifetimes.** A success clears itself after 4 seconds; anything you have to act on
-   stays until you act; no timer ever clears an error. Right now *"Windows would not let go of
-   the clipboard"* looks identical to success four seconds later.
+1. **Pin the unlock body to a fixed height.** The busy panel is now top-aligned like the rest,
+   so it no longer leaps down the window — but the panels are still different heights, so the
+   content below shifts between steps. Measure the tallest at load rather than hard-coding a
+   number, which would clip the 12-word grid at 150% text scaling.
+2. **The recovery window** has not had the band or the new footer treatment yet.
+3. **Window open.** Root grid fading in over Settle with a 10px lift, started on
+   `ContentRendered` rather than `Loaded` so the first frame is already composed. Never animate
+   `Window.Opacity` — Win32 promotes it to a layered window, which flickers and degrades text.

@@ -41,7 +41,7 @@ public partial class UnlockWindow : Window
         if (withVault is not null)
         {
             _stick = withVault;
-            SetStatus($"Stick connected  ({withVault.Root})", ok: true);
+            SetStatus("Stick connected", Mood.Good, $"{withVault.Root}  ·  {withVault.Label}");
             ShowUnlockOrEnrol();
             return;
         }
@@ -49,13 +49,15 @@ public partial class UnlockWindow : Window
         if (sticks.Count > 0)
         {
             _stick = sticks[0];
-            SetStatus($"Empty stick found  ({sticks[0].Root})", ok: false, amber: true);
+            SetStatus("Empty stick found", Mood.Idle, $"{sticks[0].Root}  ·  no vault on it yet");
             Show(NewStickPanel);
             return;
         }
 
+        // Not an error - it is where you start every time. A red dot on every launch
+        // cries wolf, so no stick is grey.
         _stick = null;
-        SetStatus("No stick plugged in", ok: false);
+        SetStatus("No stick plugged in", Mood.Idle, "Plug yours in and this screen will notice");
         DrivesFound.Text = "";
         Show(NoStickPanel);
     }
@@ -98,7 +100,7 @@ public partial class UnlockWindow : Window
         {
             var (phrase, _) = VaultStorage.Initialise(_stick.Root);
             _phraseForSetup = phrase;
-            SetStatus($"Stick connected  ({_stick.Root})", ok: true);
+            SetStatus("Stick connected", Mood.Good, $"{_stick.Root}  ·  vault created");
 
             WordsList.ItemsSource = phrase.Split(' ')
                 .Select((word, i) => new { Number = i + 1, Word = word })
@@ -158,10 +160,16 @@ public partial class UnlockWindow : Window
         NewPinBox.Clear();
         NewPinAgainBox.Clear();
 
-        await RunSlowly("Setting up...", () =>
+        await RunSlowly("Setting this PC up", "Argon2id · 64 MiB · 3 passes", report =>
         {
+            report.Report(StickFound);
             var (deviceSecret, protection) = DeviceSecret.Load(_folder);
-            return Enrolment.Enrol(_folder, _stick.Root, _phraseForSetup, pin, deviceSecret, protection).MasterKey;
+            report.Report(ChipRead);
+
+            report.Report(Deriving);
+            var key = Enrolment.Enrol(_folder, _stick.Root, _phraseForSetup, pin, deviceSecret, protection).MasterKey;
+            report.Report(KeyReady);
+            return key;
         });
     }
 
@@ -192,10 +200,16 @@ public partial class UnlockWindow : Window
             await Task.Delay(waitFor);
         }
 
-        await RunSlowly("Opening...", () =>
+        await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
         {
+            report.Report(StickFound);
             var (deviceSecret, _) = DeviceSecret.Load(_folder);
-            return Enrolment.UnlockWithPin(_folder, _stick.Root, pin, deviceSecret).MasterKey;
+            report.Report(ChipRead);
+
+            report.Report(Deriving);
+            var key = Enrolment.UnlockWithPin(_folder, _stick.Root, pin, deviceSecret).MasterKey;
+            report.Report(KeyReady);
+            return key;
         });
     }
 
@@ -232,7 +246,16 @@ public partial class UnlockWindow : Window
         if (!Mnemonic.TryParse(phrase, out _, out var problem)) { Say(problem); return; }
 
         RecoveryBox.Clear();
-        await RunSlowly("Opening...", () => Enrolment.UnlockWithPhrase(_folder, _stick.Root, phrase));
+        await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
+        {
+            report.Report(StickFound);
+
+            // The second pin stays up on purpose: your 12 words do not use this PC's chip.
+            report.Report(Deriving);
+            var key = Enrolment.UnlockWithPhrase(_folder, _stick.Root, phrase);
+            report.Report(KeyReady);
+            return key;
+        });
     }
 
     // ---- plumbing ----
@@ -241,26 +264,54 @@ public partial class UnlockWindow : Window
     /// Argon2id takes a moment on purpose. Run it off the UI thread so the window does not
     /// freeze, and show what is happening.
     /// </summary>
-    private async Task RunSlowly(string busyText, Func<byte[]> work)
+    private async Task RunSlowly(string state, string detail, Func<IProgress<int>, byte[]> work)
     {
         var previous = VisiblePanel();
-        BusyText.Text = busyText;
+
+        SetStatus(state, Mood.Working, detail);
+        Mechanism.Reset();
         Show(BusyPanel);
         Say("");
 
+        // Progress is created here, on the UI thread, so its callback comes back here too.
+        var report = new Progress<int>(Stage);
+
         try
         {
-            var masterKey = await Task.Run(work);
+            var masterKey = await Task.Run(() => work(report));
+
+            Mechanism.Seat(4, "Your vault");
+            await Task.Delay(200);            // let the last pin land before the window changes
             OpenVault(masterKey);
         }
         catch (Exception ex)
         {
             _midFlow = false;
+            Mechanism.Reset();
+            SetStatus("Could not open your vault", Mood.Bad);
             Say(ex.Message);
             if (previous is not null) Show(previous);
-            Refresh();
         }
     }
+
+    /// <summary>
+    /// Each step of the unlock, as it genuinely happens. Nothing here is on a timer.
+    /// </summary>
+    private void Stage(int step)
+    {
+        switch (step)
+        {
+            case StickFound: Mechanism.Seat(1, "Your stick"); break;
+            case ChipRead: Mechanism.Seat(2, "This PC's chip"); break;
+            case Deriving: Mechanism.Breathe(3, "Deriving your key"); break;
+            case KeyReady: Mechanism.Seat(3, "Your key"); break;
+        }
+    }
+
+    private const int StickFound = 1;
+    private const int ChipRead = 2;
+    private const int Deriving = 3;
+    private const int KeyReady = 4;
 
     private void OpenVault(byte[] masterKey)
     {
@@ -286,10 +337,11 @@ public partial class UnlockWindow : Window
                    || panel == PhrasePanel || panel == BusyPanel;
     }
 
-    private void SetStatus(string text, bool ok, bool amber = false)
+    private void SetStatus(string state, Mood mood, string detail = "")
     {
-        StickText.Text = text;
-        StickDot.Fill = (Brush)FindResource(ok ? "Good" : amber ? "Accent" : "Danger");
+        Band.State = state;
+        Band.Detail = detail;
+        Band.Mood = mood;
     }
 
     private void Say(string text, bool error = true)

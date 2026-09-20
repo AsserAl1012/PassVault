@@ -1,0 +1,53 @@
+<UserControl x:Class="PassVault.App.StateBand"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- The one thing in the product that ever changes background colour. Built once, used
+         on all three windows, so a sequence of screens reads as one instrument rather than
+         five separate dialogs. -->
+    <Border x:Name="Shell" CornerRadius="4" BorderThickness="1" Padding="15,0">
+        <Border.Background>
+            <SolidColorBrush x:Name="Wash" Color="{StaticResource IdleWashColor}"/>
+        </Border.Background>
+        <Border.BorderBrush>
+            <SolidColorBrush x:Name="Edge" Color="{StaticResource HairlineColor}"/>
+        </Border.BorderBrush>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock x:Name="GlyphText" Grid.Column="0"
+                       FontFamily="Segoe MDL2 Assets" FontSize="18"
+                       TextOptions.TextFormattingMode="Ideal"
+                       VerticalAlignment="Center" Margin="0,0,13,0" Text="&#xE72E;">
+                <TextBlock.Foreground>
+                    <SolidColorBrush x:Name="GlyphInk" Color="{StaticResource TextSecondaryColor}"/>
+                </TextBlock.Foreground>
+            </TextBlock>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock x:Name="StateText" FontSize="13" Foreground="{StaticResource Text}"
+                           TextTrimming="CharacterEllipsis"/>
+                <!-- Always present, even when empty, so the band never changes height and
+                     nothing below it can jump. -->
+                <TextBlock x:Name="DetailText" FontSize="11" Foreground="{StaticResource Muted}"
+                           TextTrimming="CharacterEllipsis" Margin="0,2,0,0" MinHeight="14"/>
+            </StackPanel>
+
+            <!-- The right-hand slot. A plain TextBlock rather than a content presenter: a
+                 named element handed in from outside lands in the wrong namescope. -->
+            <TextBlock x:Name="TrailText" Grid.Column="2" VerticalAlignment="Center"
+                       Margin="12,0,0,0" FontSize="12"
+                       FontFamily="Cascadia Mono, Consolas"
+                       TextOptions.TextFormattingMode="Ideal">
+                <TextBlock.Foreground>
+                    <SolidColorBrush x:Name="TrailInk" Color="{StaticResource TextSecondaryColor}"/>
+                </TextBlock.Foreground>
+            </TextBlock>
+        </Grid>
+    </Border>
+</UserControl>

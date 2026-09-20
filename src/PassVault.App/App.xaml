@@ -338,11 +338,13 @@
              steps - moving forward, not committing anything. -->
         <Style x:Key="Outline" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
+                        <!-- TemplateBinding, so a derived style can retint the edge. -->
                         <Border x:Name="Shape" CornerRadius="3" BorderThickness="1"
-                                BorderBrush="{StaticResource Accent}">
+                                BorderBrush="{TemplateBinding BorderBrush}">
                             <Border.Background>
                                 <SolidColorBrush Color="{StaticResource RaisedColor}"/>
                             </Border.Background>
@@ -383,6 +385,12 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- Red edge, red text. Only for a step that destroys something. -->
+        <Style x:Key="Destructive" TargetType="Button" BasedOn="{StaticResource Outline}">
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Danger}"/>
         </Style>
 
         <Style x:Key="Quiet" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">

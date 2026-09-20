@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using PassVault.Core.Machine;
 using PassVault.Core.Model;
@@ -18,9 +19,10 @@ public partial class MainWindow : Window
     private readonly byte[] _masterKey;
     private readonly List<Entry> _all;
 
-    private readonly DispatcherTimer _idleWatch = new() { Interval = TimeSpan.FromSeconds(20) };
+    private readonly DispatcherTimer _idleWatch = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _clipboardWatch = new() { Interval = ClearClipboardAfter };
     private readonly DispatcherTimer _toastWatch = new() { Interval = TimeSpan.FromSeconds(4) };
+    private readonly DispatcherTimer _confirmWatch = new() { Interval = TimeSpan.FromSeconds(8) };
 
     private Entry? _chosen;
     private string _realPassword = "";
@@ -29,6 +31,8 @@ public partial class MainWindow : Window
     private DateTime _lastActive = DateTime.UtcNow;
     private string? _lastCopied;
     private bool _locking;
+    private bool _holdingMessage;
+    private string _restingDetail = "";
 
     public MainWindow(string stickRoot, byte[] masterKey)
     {
@@ -45,14 +49,12 @@ public partial class MainWindow : Window
         ApplyFilter();
         ShowStatus();
 
-        _idleWatch.Tick += (_, _) =>
-        {
-            if (DateTime.UtcNow - _lastActive > LockAfterIdle) Lock();
-        };
+        _idleWatch.Tick += (_, _) => Countdown();
         _idleWatch.Start();
 
         _clipboardWatch.Tick += (_, _) => ClearClipboard();
-        _toastWatch.Tick += (_, _) => { ToastText.Text = ""; _toastWatch.Stop(); };
+        _toastWatch.Tick += (_, _) => ClearMessage();
+        _confirmWatch.Tick += (_, _) => CancelDelete();
 
         SearchBox.Focus();
     }
@@ -62,6 +64,7 @@ public partial class MainWindow : Window
         _idleWatch.Stop();
         _clipboardWatch.Stop();
         _toastWatch.Stop();
+        _confirmWatch.Stop();
         ClearClipboard();
         Array.Clear(_masterKey);
     }
@@ -100,6 +103,8 @@ public partial class MainWindow : Window
             _chosen = null;
             return;
         }
+
+        CancelDelete();
 
         _chosen = entry;
         _filling = true;
@@ -184,15 +189,46 @@ public partial class MainWindow : Window
         Toast("Saved to your stick and the spare copy");
     }
 
-    private void OnDelete(object sender, RoutedEventArgs e)
+    /// <summary>Ask, in the footer. Backs out on its own after 8 seconds of no answer.</summary>
+    private void OnDeleteAsked(object sender, RoutedEventArgs e)
     {
         if (_chosen is null) return;
 
-        var confirm = MessageBox.Show(
-            $"Delete \"{_chosen.Name}\"?\n\nThis cannot be undone.",
-            "PassVault", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        ConfirmText.Text = $"Delete “{_chosen.Name}” for good?";
+        CrossFadeFooter(toConfirm: true);
 
-        if (confirm != MessageBoxResult.OK) return;
+        _confirmWatch.Stop();
+        _confirmWatch.Start();
+    }
+
+    private void OnDeleteCancelled(object sender, RoutedEventArgs e) => CancelDelete();
+
+    private void CancelDelete()
+    {
+        _confirmWatch.Stop();
+        if (FooterConfirm.Visibility == Visibility.Visible) CrossFadeFooter(toConfirm: false);
+    }
+
+    private void CrossFadeFooter(bool toConfirm)
+    {
+        UIElement going = toConfirm ? FooterNormal : FooterConfirm;
+        UIElement coming = toConfirm ? FooterConfirm : FooterNormal;
+        var travel = (Duration)FindResource("Travel");
+
+        coming.Visibility = Visibility.Visible;
+        coming.BeginAnimation(OpacityProperty, new DoubleAnimation { To = 1, Duration = travel });
+
+        var leaving = new DoubleAnimation { To = 0, Duration = travel };
+        leaving.Completed += (_, _) => going.Visibility = Visibility.Collapsed;
+        going.BeginAnimation(OpacityProperty, leaving);
+    }
+
+    private void OnDeleteConfirmed(object sender, RoutedEventArgs e)
+    {
+        _confirmWatch.Stop();
+        CrossFadeFooter(toConfirm: false);
+
+        if (_chosen is null) return;
 
         // Kept as a tombstone rather than removed, so a deleted entry cannot come
         // back from another device once sync exists.
@@ -338,14 +374,50 @@ public partial class MainWindow : Window
     // ---- little bits ----
 
     private void ShowStatus()
-        => StatusText.Text = $"{Living.Count} credential(s)   ·   stick {_stickRoot}   ·   locks itself after {LockAfterIdle.TotalMinutes:0} minutes idle";
+    {
+        _restingDetail = $"{_stickRoot}  ·  {Living.Count} credential{(Living.Count == 1 ? "" : "s")}";
+        if (!_holdingMessage)
+        {
+            Band.State = "Vault open";
+            Band.Detail = _restingDetail;
+            Band.Mood = Mood.Good;
+        }
+    }
 
+    /// <summary>
+    /// How long until this locks itself. Ticking every second is the point - the old timer
+    /// ticked every 20 seconds and showed nothing, so the vault just vanished on you.
+    /// </summary>
+    private void Countdown()
+    {
+        var left = LockAfterIdle - (DateTime.UtcNow - _lastActive);
+
+        if (left <= TimeSpan.Zero) { Lock(); return; }
+
+        Band.Trailing = $"locks in {left.Minutes}:{left.Seconds:00}";
+        Band.TrailingAlert = left.TotalSeconds <= 60;
+    }
+
+    /// <summary>
+    /// A success clears itself after four seconds. Anything you have to act on stays until
+    /// you act. No timer ever clears an error - otherwise "Windows would not let go of the
+    /// clipboard" looks exactly like success, four seconds later.
+    /// </summary>
     private void Toast(string text, bool good = true)
     {
-        ToastText.Text = text;
-        ToastText.Foreground = (System.Windows.Media.Brush)FindResource(good ? "Good" : "Danger");
+        _holdingMessage = true;
+        Band.Detail = text;
+        Band.Mood = good ? Mood.Good : Mood.Bad;
+
         _toastWatch.Stop();
-        _toastWatch.Start();
+        if (good) _toastWatch.Start();
+    }
+
+    private void ClearMessage()
+    {
+        _toastWatch.Stop();
+        _holdingMessage = false;
+        ShowStatus();
     }
 
     private static string? Blank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
