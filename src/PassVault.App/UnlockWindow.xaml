@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:PassVault.App"
         Title="PassVault" Height="600" Width="480"
-        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Icon="passvault.ico" WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         Background="{StaticResource Void}" FontFamily="{StaticResource UiFont}" FontSize="13"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
