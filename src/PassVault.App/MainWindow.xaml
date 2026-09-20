@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="PassVault" Height="710" Width="1000" MinHeight="520" MinWidth="820"
         WindowStartupLocation="CenterScreen"
-        Background="#16181D" FontFamily="Segoe UI" FontSize="14"
+        Background="{StaticResource Void}" FontFamily="{StaticResource UiFont}" FontSize="13"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
         Loaded="OnLoaded" Closed="OnClosed"
         PreviewMouseMove="OnUserActive" PreviewKeyDown="OnUserActive">
 
@@ -34,14 +36,14 @@
 
             <Grid Grid.Column="0" Width="420" HorizontalAlignment="Left">
                 <TextBox x:Name="SearchBox" TextChanged="OnSearchChanged" Padding="34,8,10,8"/>
-                <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                <TextBlock Style="{StaticResource Glyph}" Text="&#xE721;"
                            Foreground="{StaticResource Muted}" Margin="12,0,0,0"
                            VerticalAlignment="Center" IsHitTestVisible="False"/>
                 <TextBlock x:Name="SearchHint" Text="Search your credentials" Foreground="{StaticResource Muted}"
                            Margin="35,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
             </Grid>
 
-            <Button Grid.Column="1" Style="{StaticResource Primary}" Content="Add credential"
+            <Button Grid.Column="1" Content="Add credential"
                     Margin="12,0,8,0" Click="OnAdd"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
                 <Button Content="Back up" Margin="0,0,8,0" Click="OnBackup"/>
@@ -56,8 +58,8 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" CornerRadius="10" Background="{StaticResource Panel}"
-                    BorderBrush="{StaticResource Line}" BorderThickness="1">
+            <Border Grid.Column="0" CornerRadius="4" Background="{StaticResource Surface}"
+                    BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                 <Grid>
                     <ListBox x:Name="EntryList" Background="Transparent" BorderThickness="0"
                              Padding="6" SelectionChanged="OnSelectionChanged"
@@ -69,15 +71,75 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
-                                            <Border x:Name="Row" CornerRadius="7" Padding="11,9" Background="Transparent">
-                                                <ContentPresenter/>
-                                            </Border>
+                                            <Grid>
+                                                <Border x:Name="Row" CornerRadius="3" Padding="13,9,11,9">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="Transparent"/>
+                                                    </Border.Background>
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <!-- Selection is grey plus a brass bar, not a blue wash. The bar is
+                                                     always there and fades in, so nothing has to move or resize. -->
+                                                <Border x:Name="Bar" Width="2" HorizontalAlignment="Left"
+                                                        Margin="0,4" CornerRadius="1" Opacity="0"
+                                                        Background="{StaticResource Accent}" IsHitTestVisible="False"/>
+                                            </Grid>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="Row" Property="Background" Value="#252931"/>
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <ColorAnimation Storyboard.TargetName="Row"
+                                                                                Storyboard.TargetProperty="Background.Color"
+                                                                                To="{StaticResource RaisedColor}"
+                                                                                Duration="{StaticResource Shift}"
+                                                                                EasingFunction="{StaticResource EaseOut}"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <ColorAnimation Storyboard.TargetName="Row"
+                                                                                Storyboard.TargetProperty="Background.Color"
+                                                                                To="Transparent"
+                                                                                Duration="{StaticResource Shift}"
+                                                                                EasingFunction="{StaticResource EaseOut}"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.ExitActions>
                                                 </Trigger>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="Row" Property="Background" Value="#2C3C5C"/>
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <ColorAnimation Storyboard.TargetName="Row"
+                                                                                Storyboard.TargetProperty="Background.Color"
+                                                                                To="{StaticResource ActiveColor}"
+                                                                                Duration="{StaticResource Shift}"
+                                                                                EasingFunction="{StaticResource EaseOut}"/>
+                                                                <DoubleAnimation Storyboard.TargetName="Bar"
+                                                                                 Storyboard.TargetProperty="Opacity" To="1"
+                                                                                 Duration="{StaticResource Shift}"
+                                                                                 EasingFunction="{StaticResource EaseOut}"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <ColorAnimation Storyboard.TargetName="Row"
+                                                                                Storyboard.TargetProperty="Background.Color"
+                                                                                To="Transparent"
+                                                                                Duration="{StaticResource Shift}"
+                                                                                EasingFunction="{StaticResource EaseOut}"/>
+                                                                <DoubleAnimation Storyboard.TargetName="Bar"
+                                                                                 Storyboard.TargetProperty="Opacity" To="0"
+                                                                                 Duration="{StaticResource Shift}"
+                                                                                 EasingFunction="{StaticResource EaseOut}"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.ExitActions>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -102,8 +164,8 @@
             </Border>
 
             <!-- details -->
-            <Border Grid.Column="1" CornerRadius="10" Margin="14,0,0,0" Background="{StaticResource Panel}"
-                    BorderBrush="{StaticResource Line}" BorderThickness="1">
+            <Border Grid.Column="1" CornerRadius="4" Margin="14,0,0,0" Background="{StaticResource Surface}"
+                    BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                 <Grid>
                     <TextBlock x:Name="NothingChosen" Foreground="{StaticResource Muted}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -123,15 +185,19 @@
                             <TextBlock Text="Username" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
                                 <TextBox x:Name="UsernameBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"/>
-                                <Button Style="{StaticResource IconButton}" Content="&#xE8C8;" ToolTip="Copy"
-                                        HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyUsername"/>
+                                <Button Style="{StaticResource IconButton}" ToolTip="Copy"
+                                        HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyUsername">
+                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
+                                </Button>
                             </Grid>
 
                             <TextBlock Text="Email" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
                                 <TextBox x:Name="EmailBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"/>
-                                <Button Style="{StaticResource IconButton}" Content="&#xE8C8;" ToolTip="Copy"
-                                        HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyEmail"/>
+                                <Button Style="{StaticResource IconButton}" ToolTip="Copy"
+                                        HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyEmail">
+                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
+                                </Button>
                             </Grid>
 
                             <TextBlock Text="Password" Style="{StaticResource Label}" Margin="0,13,0,5"/>
@@ -140,9 +206,12 @@
                                          FontFamily="Consolas" Padding="10,8,80,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,3,0">
                                     <Button x:Name="ShowHideButton" Style="{StaticResource IconButton}"
-                                            Content="&#xE7B3;" ToolTip="Show or hide" Click="OnToggleShowPassword"/>
-                                    <Button Style="{StaticResource IconButton}" Content="&#xE8C8;" ToolTip="Copy"
-                                            Click="OnCopyPassword"/>
+                                            ToolTip="Show or hide" Click="OnToggleShowPassword">
+                                        <TextBlock x:Name="ShowHideGlyph" Style="{StaticResource Glyph}" Text="&#xE7B3;"/>
+                                    </Button>
+                                    <Button Style="{StaticResource IconButton}" ToolTip="Copy" Click="OnCopyPassword">
+                                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
+                                    </Button>
                                 </StackPanel>
                             </Grid>
 
@@ -152,12 +221,12 @@
                         </StackPanel>
                       </ScrollViewer>
 
-                      <Border Grid.Row="1" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0"
+                      <Border Grid.Row="1" BorderBrush="{StaticResource Hairline}" BorderThickness="0,1,0,0"
                               Padding="24,14">
                           <StackPanel Orientation="Horizontal">
                               <Button x:Name="SaveButton" Style="{StaticResource Primary}" Content="Save"
                                       IsEnabled="False" Click="OnSave"/>
-                              <Button Content="Delete" Margin="8,0,0,0" Foreground="#FF8A8A" Click="OnDelete"/>
+                              <Button Content="Delete" Margin="8,0,0,0" Foreground="{StaticResource Danger}" Click="OnDelete"/>
                           </StackPanel>
                       </Border>
                     </Grid>

@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="PassVault - replace your stick" Height="680" Width="560"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
-        Background="#16181D" FontFamily="Segoe UI" FontSize="14"
+        Background="{StaticResource Void}" FontFamily="{StaticResource UiFont}" FontSize="13"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
         Loaded="OnLoaded" Closed="OnClosed">
 
     <Grid Margin="32,26,32,24">
@@ -23,8 +25,8 @@
 
             <!-- 1. where the vault is coming from -->
             <StackPanel x:Name="SourcePanel" Visibility="Collapsed" VerticalAlignment="Top">
-                <Border CornerRadius="9" Padding="15,13" Background="{StaticResource Panel}"
-                        BorderBrush="{StaticResource Line}" BorderThickness="1">
+                <Border CornerRadius="4" Padding="15,13" Background="{StaticResource Surface}"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Text="Your credentials will come from" Style="{StaticResource Label}"/>
                         <TextBlock x:Name="SourceText" TextWrapping="Wrap"/>
@@ -54,8 +56,8 @@
             <!-- 3. which drive to write -->
             <StackPanel x:Name="StickPanel" Visibility="Collapsed" VerticalAlignment="Top">
                 <TextBlock Text="Plug in the new stick and pick it below" Style="{StaticResource Label}"/>
-                <Border CornerRadius="9" Height="180" Background="{StaticResource Panel}"
-                        BorderBrush="{StaticResource Line}" BorderThickness="1">
+                <Border CornerRadius="4" Height="180" Background="{StaticResource Surface}"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                     <Grid>
                         <ListBox x:Name="DriveList" Background="Transparent" BorderThickness="0" Padding="6"
                                  SelectionChanged="OnDriveChosen">
@@ -101,8 +103,8 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" CornerRadius="9" Padding="14" Background="{StaticResource Panel}"
-                        BorderBrush="{StaticResource Line}" BorderThickness="1">
+                <Border Grid.Row="0" CornerRadius="4" Padding="14" Background="{StaticResource Surface}"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Text="Your NEW 12 words - write them down now" Style="{StaticResource Label}"/>
                         <ItemsControl x:Name="WordsList" Margin="0,4,0,0">
@@ -125,8 +127,8 @@
                 <TextBlock Grid.Row="1" Style="{StaticResource Sub}" FontSize="12" Margin="2,16,0,8" TextWrapping="Wrap"
                            Text="Whoever had the old stick may have copied the encrypted vault off it. They cannot open it, but the safe move is to change these passwords. Tick them off as you go."/>
 
-                <Border Grid.Row="2" CornerRadius="9" Background="{StaticResource Panel}"
-                        BorderBrush="{StaticResource Line}" BorderThickness="1">
+                <Border Grid.Row="2" CornerRadius="4" Background="{StaticResource Surface}"
+                        BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,10">
                         <ItemsControl x:Name="ChangeList">
                             <ItemsControl.ItemTemplate>
@@ -146,7 +148,7 @@
 
         <Grid Grid.Row="2" Margin="0,14,0,0">
             <TextBlock x:Name="Message" TextWrapping="Wrap" FontSize="12"
-                       Foreground="{StaticResource Bad}" MinHeight="32" VerticalAlignment="Center"/>
+                       Foreground="{StaticResource Danger}" MinHeight="32" VerticalAlignment="Center"/>
             <Button x:Name="FinishButton" Style="{StaticResource Primary}" Content="Open my vault"
                     HorizontalAlignment="Right" Visibility="Collapsed" Click="OnFinish"/>
         </Grid>

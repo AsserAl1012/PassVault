@@ -131,7 +131,7 @@ public partial class MainWindow : Window
         _filling = true;
         PasswordBoxText.Text = _passwordHidden && _realPassword.Length > 0 ? Dots : _realPassword;
         PasswordBoxText.IsReadOnly = _passwordHidden && _realPassword.Length > 0;
-        ShowHideButton.Content = _passwordHidden ? "" : "";
+        ShowHideGlyph.Text = _passwordHidden ? "" : "";
         _filling = false;
     }
 
@@ -343,7 +343,7 @@ public partial class MainWindow : Window
     private void Toast(string text, bool good = true)
     {
         ToastText.Text = text;
-        ToastText.Foreground = (System.Windows.Media.Brush)FindResource(good ? "Good" : "Bad");
+        ToastText.Foreground = (System.Windows.Media.Brush)FindResource(good ? "Good" : "Danger");
         _toastWatch.Stop();
         _toastWatch.Start();
     }

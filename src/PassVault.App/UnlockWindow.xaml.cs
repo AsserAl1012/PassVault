@@ -289,13 +289,13 @@ public partial class UnlockWindow : Window
     private void SetStatus(string text, bool ok, bool amber = false)
     {
         StickText.Text = text;
-        StickDot.Fill = (Brush)FindResource(ok ? "Good" : amber ? "Accent" : "Bad");
+        StickDot.Fill = (Brush)FindResource(ok ? "Good" : amber ? "Accent" : "Danger");
     }
 
     private void Say(string text, bool error = true)
     {
         Message.Text = text;
-        Message.Foreground = (Brush)FindResource(error ? "Bad" : "Muted");
+        Message.Foreground = (Brush)FindResource(error ? "Danger" : "Muted");
     }
 }
 

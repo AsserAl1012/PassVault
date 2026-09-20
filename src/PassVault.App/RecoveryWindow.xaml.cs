@@ -241,6 +241,6 @@ public partial class RecoveryWindow : Window
     private void Say(string text)
     {
         Message.Text = text;
-        Message.Foreground = (Brush)FindResource("Bad");
+        Message.Foreground = (Brush)FindResource("Danger");
     }
 }
