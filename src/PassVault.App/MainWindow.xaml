@@ -47,6 +47,10 @@
             <Button Grid.Column="1" Content="Add credential"
                     Margin="12,0,8,0" Click="OnAdd"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <!-- Quiet, always there, never in the way. Shows the owner's name once bought,
+                     which is what owning something ought to feel like. -->
+                <Button x:Name="LicenceButton" Style="{StaticResource Quiet}" Content="Free version"
+                        Margin="0,0,4,0" Click="OnLicence"/>
                 <Button Content="Back up" Margin="0,0,8,0" Click="OnBackup"/>
                 <Button Content="Lock" Click="OnLock"/>
             </StackPanel>

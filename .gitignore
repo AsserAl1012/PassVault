@@ -12,3 +12,7 @@ secrets/
 # build output - the published app and the installer are large and regenerated
 dist/
 brand/_sizes.png
+
+# the licence signing key must never be committed
+.passvault-signing-key
+licence.txt

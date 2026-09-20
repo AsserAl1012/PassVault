@@ -35,6 +35,11 @@ src/PassVault.App/         the Windows app (the window you actually use)
 src/PassVault.Cli/         console tool, handy for scripting and testing
 src/PassVault.Tests/       the tests
 ios/                       the iPhone app - see ios/README.md (needs a Mac to build)
+brand/                     the logo, the .ico, installer artwork (regenerate with tools/IconMaker)
+installer/PassVault.iss    the Inno Setup script
+tools/IconMaker/           draws the logo as geometry and writes the .ico
+tools/LicenceMaker/        the seller's tool - issues licences, never shipped
+LICENCE.md                 what buying PassVault actually gets you
 ```
 
 ## Run the tests
@@ -51,7 +56,8 @@ dotnet test
 - [x] **Step 4** — the app window: list, search, add and edit credentials
 - [x] **Step 5** — re-key after a theft, backup export, rollback refusal
 - [~] **Step 6** — iPhone app: written and reviewed, **never compiled**. Needs a Mac. See [ios/README.md](ios/README.md)
-- [ ] **Step 7** — sync server
+- [ ] **Step 7** — sync server (LAN version designed and reviewed; blocked on network, see notes)
+- [x] **Brand, installer and licensing** — see LICENCE.md and installer/
 
 ## What works right now
 

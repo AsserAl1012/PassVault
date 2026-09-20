@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using PassVault.Core.Licensing;
 using PassVault.Core.Machine;
 using PassVault.Core.Model;
 using PassVault.Core.Usb;
@@ -56,7 +57,24 @@ public partial class MainWindow : Window
         _toastWatch.Tick += (_, _) => ClearMessage();
         _confirmWatch.Tick += (_, _) => CancelDelete();
 
+        ShowLicence();
         SearchBox.Focus();
+    }
+
+    /// <summary>
+    /// The free version is complete and safe, so this is a label rather than a nag. Once
+    /// bought it shows the owner's name, which is the point of buying it.
+    /// </summary>
+    private void ShowLicence()
+    {
+        var licence = LicenceStore.Load(MachineStore.DefaultFolder);
+        LicenceButton.Content = licence is null ? "Free version" : licence.Name;
+    }
+
+    private void OnLicence(object sender, RoutedEventArgs e)
+    {
+        new LicenceWindow { Owner = this }.ShowDialog();
+        ShowLicence();
     }
 
     private void OnClosed(object? sender, EventArgs e)
