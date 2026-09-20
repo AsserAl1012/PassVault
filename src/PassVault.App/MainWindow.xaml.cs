@@ -159,23 +159,39 @@ public partial class MainWindow : Window
 
     // ---- the password box ----
 
+    /// <summary>
+    /// True only when the box is actually showing dots instead of the password. An empty
+    /// password has nothing to hide, so the box stays editable even with the eye shut.
+    /// </summary>
+    private bool Masked => _passwordHidden && _realPassword.Length > 0;
+
     private void PaintPassword()
     {
         _filling = true;
-        PasswordBoxText.Text = _passwordHidden && _realPassword.Length > 0 ? Dots : _realPassword;
-        PasswordBoxText.IsReadOnly = _passwordHidden && _realPassword.Length > 0;
+        PasswordBoxText.Text = Masked ? Dots : _realPassword;
+        PasswordBoxText.IsReadOnly = Masked;
         ShowHideGlyph.Text = _passwordHidden ? "" : "";
         _filling = false;
     }
 
     private void OnToggleShowPassword(object sender, RoutedEventArgs e)
     {
-        if (!_passwordHidden) _realPassword = PasswordBoxText.Text;
+        // Take what is on screen before repainting, or typing then pressing the eye loses it.
+        if (!PasswordBoxText.IsReadOnly) _realPassword = PasswordBoxText.Text;
+
         _passwordHidden = !_passwordHidden;
         PaintPassword();
     }
 
-    private string CurrentPassword() => _passwordHidden ? _realPassword : PasswordBoxText.Text;
+    /// <summary>
+    /// Where the real password is right now.
+    ///
+    /// One rule: the box holds the truth unless it is read-only, in which case it is showing
+    /// dots and the truth is in _realPassword. Asking _passwordHidden instead was a bug - on
+    /// a new credential the eye is shut but the box is editable, so everything typed was
+    /// thrown away on save.
+    /// </summary>
+    private string CurrentPassword() => PasswordBoxText.IsReadOnly ? _realPassword : PasswordBoxText.Text;
 
     // ---- adding, saving, deleting ----
 
@@ -210,6 +226,10 @@ public partial class MainWindow : Window
         _realPassword = _chosen.Password ?? "";
 
         if (!Persist()) return;
+
+        // Repaint so a password typed in the clear goes behind dots as soon as it is saved,
+        // instead of staying on screen until you click somewhere else.
+        PaintPassword();
 
         SaveButton.IsEnabled = false;
         ApplyFilter();
