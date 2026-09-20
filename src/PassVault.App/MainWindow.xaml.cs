@@ -109,6 +109,7 @@ public partial class MainWindow : Window
         _chosen = entry;
         _filling = true;
 
+        DetailMark.Site = entry.Name;
         NameBox.Text = entry.Name;
         UsernameBox.Text = entry.Username ?? "";
         EmailBox.Text = entry.Email ?? "";
@@ -126,7 +127,16 @@ public partial class MainWindow : Window
 
     private void OnFieldEdited(object sender, RoutedEventArgs e)
     {
-        if (!_filling) SaveButton.IsEnabled = true;
+        if (_filling) return;
+
+        SaveButton.IsEnabled = true;
+
+        // The mark follows what you are typing, so it turns into the real logo the moment
+        // the name is recognisable rather than waiting for a save.
+        if (ReferenceEquals(sender, NameBox))
+        {
+            DetailMark.Site = NameBox.Text;
+        }
     }
 
     // ---- the password box ----

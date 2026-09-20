@@ -96,8 +96,29 @@ Seven named entries. Anything not on this list does not animate.
       up on purpose — your phrase does not use this PC's chip, so it would be a lie to seat it.
 - [x] **Delete confirms in the footer**, cross-fading in place, backing out after 8 seconds of
       no answer. Replaces a light-grey Win32 MessageBox in the middle of a dark product.
+- [x] **Site marks.** A real brand logo where we have one (46 bundled), a generated letter
+      mark where we do not, so every row is scannable by shape. The detail panel got a proper
+      header — the credential's name is now edited in place as its heading rather than sitting
+      in a labelled box below a duplicate of itself.
 - [x] **Message lifetimes.** A success clears itself after 4 seconds; anything you must act on
       stays until you act; no timer ever clears an error.
+
+## Site icons, and why they are bundled
+
+Brand artwork comes from [Simple Icons](https://simpleicons.org), whose files are CC0. The
+logos stay their owners' trademarks and are used only to identify those services.
+
+**They are never fetched.** Asking the internet for a favicon — from Google's favicon service
+or from each site directly — would tell someone every service you hold a password for, one
+request at a time. That is your vault's contents leaking out in plain sight. Bundling costs
+about 40KB of path data, works offline and instantly, and leaks nothing.
+
+Anything without bundled artwork still gets a mark: the first letter on a hue derived from a
+hash of the name, so the same site always looks the same. Saturation and lightness are fixed,
+so only the hue moves — the marks are tellable apart without any one shouting.
+
+Brands that are black or near-black (GitHub, Apple, X, Steam) are lifted to a light neutral,
+because painted as-is they are invisible on a dark tile. Those marks are monochrome anyway.
 
 ## Still to do
 
