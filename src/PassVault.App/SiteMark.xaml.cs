@@ -99,7 +99,11 @@ public partial class SiteMark : UserControl
         int hash = 17;
         foreach (var c in token) hash = hash * 31 + c;
 
-        return FromHsl(Math.Abs(hash) % 360, 0.52, 0.66);
+        // Widen before Math.Abs. The hash wraps, and a name that lands exactly on int.MinValue
+        // ("b1oeurs" is one) made Math.Abs throw - while typing the name, and then on every
+        // unlock once it was saved, so the vault could not be opened in the app at all. As a
+        // long every other name keeps exactly the colour it had.
+        return FromHsl(Math.Abs((long)hash) % 360, 0.52, 0.66);
     }
 
     private static Color FromHsl(double hue, double saturation, double lightness)
