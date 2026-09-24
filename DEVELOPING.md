@@ -148,6 +148,40 @@ Change the version in **two** places or they will disagree:
 Leave `AppId` alone. It is how Windows knows an install is an upgrade rather than a second
 copy.
 
+### Upgrades, and what must survive one
+
+Running a newer setup over an older install upgrades it in place. No uninstall first.
+
+**Tested end to end, not assumed** - installed 1.0.0, set up a stick, a PIN, a credential and
+a licence, then installed 1.0.1 over the top:
+
+| | |
+|---|---|
+| Installed Apps | one entry, 1.0.1 - not two copies |
+| `vault.pv`, `machine.pvm`, `device.bin` | untouched |
+| `licence.txt` | untouched, still verifies |
+| The PIN | still opens the vault |
+| The credential | still there, password intact |
+
+Re-run that check whenever the installer script changes. The failure mode is silent and
+severe: a user who loses `device.bin` loses their PIN, and one who loses `licence.txt` looks
+unlicensed. Both would be blamed on the update, correctly.
+
+### How users actually get updates
+
+The app never checks for updates, because it never contacts anything - that is the same
+promise that keeps the vault private. So the channel does it instead:
+
+- **Microsoft Store** - Windows updates it automatically. The Store does the network, not
+  PassVault, so the promise holds exactly as written.
+- **winget** - `winget upgrade PassVault`. Same: the package manager does the network.
+- **Direct download** - they run the new setup over the old install.
+
+**Do not add an update checker to the app.** It would be the only outbound connection in the
+product and it would undo the one claim that makes PassVault different. If you ever want one,
+it has to be opt-in, off by default, and triggered by a button - and the Store route already
+covers it for free.
+
 ---
 
 ## Licences

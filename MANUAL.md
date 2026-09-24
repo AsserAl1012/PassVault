@@ -17,9 +17,10 @@ Everything else in this manual can be undone. Losing those cannot.
 6. [Backing up](#backing-up)
 7. [When something goes wrong](#when-something-goes-wrong)
 8. [Using a second PC](#using-a-second-pc)
-9. [The licence](#the-licence)
-10. [Where your files live](#where-your-files-live)
-11. [What it protects you from, and what it does not](#what-it-protects-you-from-and-what-it-does-not)
+9. [Updating](#updating)
+10. [The licence](#the-licence)
+11. [Where your files live](#where-your-files-live)
+12. [What it protects you from, and what it does not](#what-it-protects-you-from-and-what-it-does-not)
 
 ---
 
@@ -252,6 +253,34 @@ Your vault is still there. In order:
 Each PC gets its own PIN and its own TPM secret. They do not share anything except the stick.
 
 ---
+
+## Updating
+
+**PassVault never checks for updates on its own, because it never contacts anything.** That
+is the same promise that keeps your vault private, and it applies here too.
+
+So updating is something you do, not something that happens to you.
+
+**If you installed from the Microsoft Store**, Windows keeps it up to date for you. The Store
+does the talking; PassVault still never opens a connection itself.
+
+**If you installed the downloaded setup file**, download the new one and run it. It installs
+over the top. You do **not** need to uninstall first.
+
+**Your vault, your PIN and your licence all survive an update.** The installer only replaces
+the program. Everything in `%LOCALAPPDATA%\PassVault` is left exactly as it was, and your
+stick is never touched.
+
+To see which version you have, press the button in the top bar — the one showing your name or
+"Free version". The version is on the right of the band at the top.
+
+### The honest part
+
+Because nothing phones home, **there is no way to tell you about an important fix.** If a
+security problem is ever found and fixed, you will only learn about it by looking.
+
+That is a real cost of building it this way, and it is worth knowing rather than discovering.
+Check for a new version now and then - once every few months is plenty.
 
 ## The licence
 

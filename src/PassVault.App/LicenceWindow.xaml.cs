@@ -26,8 +26,20 @@ public partial class LicenceWindow : Window
         Paint();
     }
 
+    /// <summary>
+    /// The version you are running. Worth showing somewhere, because this app never checks
+    /// for updates on its own - so being able to compare against what is published is the
+    /// only way to know whether you are behind.
+    /// </summary>
+    private static string Version =>
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } v
+            ? $"{v.Major}.{v.Minor}.{v.Build}"
+            : "";
+
     private void Paint()
     {
+        Band.Trailing = Version;
+
         var owned = Licence is not null;
 
         OwnedPanel.Visibility = owned ? Visibility.Visible : Visibility.Collapsed;
