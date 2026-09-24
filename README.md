@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # PassVault
 
 A password, username and email manager for Windows, with an iPhone app later.
@@ -100,6 +99,3 @@ PC — you type the 12 words once and choose a PIN.
 - lock on demand, and lock itself after 5 minutes idle
 - replace a lost, stolen or broken stick: new keys, new words, old stick dead
 - save a backup file that plus your 12 words gets everything back
-=======
-# PassVault
->>>>>>> origin/main
