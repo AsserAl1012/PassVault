@@ -117,6 +117,30 @@ Nothing is deleted. Ever.
 The band at the bottom counts down — `locks in 4:12` — and turns brass in the last minute, so
 it never surprises you.
 
+If you have changes you have not saved when it locks itself, it saves them first — as long as
+your stick is still plugged in and the credential has a name.
+
+### Screenshots and screen sharing
+
+PassVault's windows show up as **black boxes** in screenshots, screen recordings and screen
+sharing — Teams, Zoom, Discord, OBS, the Snipping Tool, Windows Recall — and in the Alt+Tab and
+taskbar previews. On your own screen they look completely normal.
+
+This is so a password you have revealed never ends up in a meeting or a recording by accident.
+
+Some things cannot see PassVault while it does this:
+
+- **Screen magnifiers** (Windows Magnifier's lens view, ZoomText, Fusion)
+- **Someone helping you remotely** with TeamViewer, AnyDesk or similar
+- **NVIDIA Instant Replay**, which pauses while PassVault is open
+
+For any of those, close PassVault and open **PassVault (screen sharing allowed)** from the Start
+menu instead. While it is running that way, the band at the bottom says *screenshots and
+screen sharing can see this window*, so you do not forget.
+
+Windows Remote Desktop is let through automatically — you do not need the other shortcut
+for that.
+
 ---
 
 ## Your credentials
@@ -155,6 +179,19 @@ Press the **copy** button next to any field.
 Press the **eye** button. The dots are always the same length, so nobody looking over your
 shoulder can tell how long your password is.
 
+### Making a strong password
+
+Press the **circular arrow** next to the password. PassVault makes a new 20-character password
+and shows it, so you can see it worked. Press it again for a different one.
+
+**It is not kept until you press Save.** When you are changing a password on a website, copy the
+new one, change it on the website, and only press Save once the website has accepted it. If the
+website's change fails, click another credential and choose **Discard**: your old password is
+still there.
+
+The passwords use capitals, small letters, numbers and a few symbols that almost every site
+accepts. They leave out characters that are easy to mix up, like `0` and `O`, or `1`, `l` and `I`.
+
 ### Deleting one
 
 Press **Delete**. The footer asks you to confirm, right there. If you ignore it for 8 seconds
@@ -182,6 +219,12 @@ time you unlock or save. That is what saves you if the stick snaps.
 ---
 
 ## When something goes wrong
+
+### PassVault is a black box, or the person helping me cannot see it
+
+That is the screen-capture protection working — see
+[Screenshots and screen sharing](#screenshots-and-screen-sharing). Close PassVault and open
+**PassVault (screen sharing allowed)** from the Start menu.
 
 ### "Your PassVault stick is not plugged in"
 
@@ -333,12 +376,14 @@ is a backup, and an uninstaller should never quietly destroy a backup.
 - Someone copying your vault file — it is encrypted, and the phrase behind it is 128-bit
 - A cloud breach — there is no cloud
 - Someone putting an old copy of your vault back to undo a password change
+- A password turning up in a screen share, a recording or a screenshot by accident
 
 **It does not protect you from:**
 
 - Someone taking **your PC and your stick together** and later learning your PIN
 - **Malware on your PC while the vault is open** — it can read everything on screen. Every
-  password manager in the world shares this.
+  password manager in the world shares this. That includes the screen-capture protection:
+  it stops accidents, and a program already running on your PC can switch it off.
 - **Losing your 12 words and your stick at the same time.** Nobody can help you then. Not me,
   not anyone. That is the point.
 

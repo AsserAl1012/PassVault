@@ -61,6 +61,10 @@ Source: "..\dist\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; For screen magnifiers and remote help, which cannot see PassVault while it is hidden from
+; capture. A shortcut rather than a setting inside the app, so it can be found by someone who
+; cannot see PassVault's window at all.
+Name: "{group}\{#AppName} (screen sharing allowed)"; Filename: "{app}\{#AppExe}"; Parameters: "--allow-screen-capture"; Comment: "Lets screen magnifiers, remote help and screen sharing see PassVault"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 

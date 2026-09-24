@@ -34,7 +34,11 @@ public partial class UnlockWindow : Window
     private bool _midFlow;
     private bool _tryingPin;
 
-    public UnlockWindow() => InitializeComponent();
+    public UnlockWindow()
+    {
+        InitializeComponent();
+        ScreenGuard.Protect(this);
+    }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {

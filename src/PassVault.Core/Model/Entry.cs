@@ -32,6 +32,12 @@ public sealed class Entry
     [JsonIgnore]
     public string Who => Username ?? Email ?? "";
 
+    /// <summary>
+    /// What a screen reader says for this row in the list - the same name and login the row
+    /// shows. Without it every credential was read out as "PassVault.Core.Model.Entry".
+    /// </summary>
+    public override string ToString() => Who.Length == 0 ? Name : $"{Name}, {Who}";
+
     /// <summary>True if this entry matches what the user typed in the search box.</summary>
     public bool Matches(string search)
     {
