@@ -10,7 +10,7 @@
 ; download, nothing to agree to, and nothing to go wrong on a machine with no internet.
 
 #define AppName       "PassVault"
-#define AppVersion    "1.0.0"
+#define AppVersion    "1.0.1"
 #define AppPublisher  "PassVault"
 #define AppExe        "PassVault.exe"
 
@@ -85,13 +85,16 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{localappdata}\PassVault');
+    { SuppressibleMsgBox, not MsgBox: a plain MsgBox ignores /SUPPRESSMSGBOXES, so a
+      silent uninstall - the one DEVELOPING.md uses, and the one winget runs - sat
+      waiting for someone to press OK. Anyone clicking Uninstall still sees it. }
     if DirExists(DataDir) then
-      MsgBox('PassVault has been removed.' + #13#10 + #13#10 +
+      SuppressibleMsgBox('PassVault has been removed.' + #13#10 + #13#10 +
              'Your vault data has been left alone, including the spare copy of your ' +
              'encrypted vault:' + #13#10 + #13#10 +
              DataDir + #13#10 + #13#10 +
              'Delete that folder yourself if you are certain you no longer need it. ' +
              'Your USB stick and your 12 words are untouched either way.',
-             mbInformation, MB_OK);
+             mbInformation, MB_OK, IDOK);
   end;
 end;
