@@ -172,8 +172,29 @@
                                     <GradientStop Offset="1" Color="{StaticResource HairlineColor}"/>
                                 </LinearGradientBrush>
                             </Border.BorderBrush>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
+                            <!-- The disabled look lives on its own layer. The hover and press
+                                 animations take over Shape's background colour, and in WPF a
+                                 running animation outranks a trigger - so once the mouse had
+                                 touched a button, "disabled" could no longer repaint it. Save
+                                 stayed brass after saving, looking like there was still
+                                 something to save. Nothing animates the veil. -->
+                            <Grid>
+                                <Border x:Name="Veil" CornerRadius="2" Visibility="Collapsed"
+                                        Background="{StaticResource Surface}"/>
+                                <!-- The label is a TextBlock this template makes, and the app-wide TextBlock
+                                     style reaches inside templates and paints it Text-white. That beat every
+                                     button's own Foreground: ink on brass came out white on brass (2.29:1, the
+                                     pairing this file forbids), disabled labels stayed bright, and red "Delete"
+                                     was white. An empty TextBlock style here stops it, so the label takes the
+                                     button's colour. It has to be inside the template: a style on the Button
+                                     itself is not consulted - that was tried and measured. -->
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Margin="{TemplateBinding Padding}">
+                                    <ContentPresenter.Resources>
+                                        <Style TargetType="TextBlock"/>
+                                    </ContentPresenter.Resources>
+                                </ContentPresenter>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -237,7 +258,7 @@
                                 </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Shape" Property="Background" Value="{StaticResource Surface}"/>
+                                <Setter TargetName="Veil" Property="Visibility" Value="Visible"/>
                                 <Setter TargetName="Shape" Property="BorderBrush" Value="{StaticResource Hairline}"/>
                                 <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
                                 <Setter Property="Cursor" Value="Arrow"/>
@@ -270,8 +291,18 @@
                                     <GradientStop Offset="1" Color="{StaticResource AccentPressColor}"/>
                                 </LinearGradientBrush>
                             </Border.BorderBrush>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
+                            <!-- Disabled veil: see the default Button style above. -->
+                            <Grid>
+                                <Border x:Name="Veil" CornerRadius="2" Visibility="Collapsed"
+                                        Background="{StaticResource Surface}"/>
+                                <!-- Label takes the button's colour: see the default Button template. -->
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Margin="{TemplateBinding Padding}">
+                                    <ContentPresenter.Resources>
+                                        <Style TargetType="TextBlock"/>
+                                    </ContentPresenter.Resources>
+                                </ContentPresenter>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -323,7 +354,7 @@
                                 </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Shape" Property="Background" Value="{StaticResource Surface}"/>
+                                <Setter TargetName="Veil" Property="Visibility" Value="Visible"/>
                                 <Setter TargetName="Shape" Property="BorderBrush" Value="{StaticResource Hairline}"/>
                                 <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
                                 <Setter Property="Cursor" Value="Arrow"/>
@@ -348,8 +379,13 @@
                             <Border.Background>
                                 <SolidColorBrush Color="{StaticResource RaisedColor}"/>
                             </Border.Background>
+                            <!-- Label takes the button's colour: see the default Button template. -->
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
+                                              Margin="{TemplateBinding Padding}">
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock"/>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -400,8 +436,13 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Shape" CornerRadius="3" Background="Transparent">
+                            <!-- Label takes the button's colour: see the default Button template. -->
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
+                                              Margin="{TemplateBinding Padding}">
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock"/>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
