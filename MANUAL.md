@@ -155,6 +155,19 @@ Press the **copy** button next to any field.
 Press the **eye** button. The dots are always the same length, so nobody looking over your
 shoulder can tell how long your password is.
 
+### Making a strong password
+
+Press the **circular arrow** next to the password. PassVault makes a new 20-character password
+and shows it, so you can see it worked. Press it again for a different one.
+
+**It is not kept until you press Save.** When you are changing a password on a website, copy the
+new one, change it on the website, and only press Save once the website has accepted it. If the
+website's change fails, click another credential and choose **Discard**: your old password is
+still there.
+
+The passwords use capitals, small letters, numbers and a few symbols that almost every site
+accepts. They leave out characters that are easy to mix up, like `0` and `O`, or `1`, `l` and `I`.
+
 ### Deleting one
 
 Press **Delete**. The footer asks you to confirm, right there. If you ignore it for 8 seconds

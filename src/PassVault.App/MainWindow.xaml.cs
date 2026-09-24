@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using PassVault.Core.Crypto;
 using PassVault.Core.Licensing;
 using PassVault.Core.Machine;
 using PassVault.Core.Model;
@@ -334,6 +335,21 @@ public partial class MainWindow : Window
     {
         box.IsUndoEnabled = false;
         box.IsUndoEnabled = true;
+    }
+
+    /// <summary>
+    /// A new strong password, shown in plain text so it is obvious something happened. Nothing
+    /// is kept until Save, and moving away offers Discard - which matters when you are
+    /// changing a password on a website and the website's change does not go through.
+    /// </summary>
+    private void OnMakePassword(object sender, RoutedEventArgs e)
+    {
+        _realPassword = PasswordGenerator.Make();
+        _passwordHidden = false;
+        PaintPassword();
+
+        SaveButton.IsEnabled = true;
+        Toast("New password made - press Save to keep it");
     }
 
     private void OnToggleShowPassword(object sender, RoutedEventArgs e)

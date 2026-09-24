@@ -230,8 +230,12 @@
                             <TextBlock Text="Password" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
                                 <TextBox x:Name="PasswordBoxText" TextChanged="OnFieldEdited"
-                                         FontFamily="Consolas" Padding="10,8,80,8"/>
+                                         FontFamily="Consolas" Padding="10,8,114,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,3,0">
+                                    <Button Style="{StaticResource IconButton}" ToolTip="Make a strong password"
+                                            Click="OnMakePassword">
+                                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE72C;"/>
+                                    </Button>
                                     <Button x:Name="ShowHideButton" Style="{StaticResource IconButton}"
                                             ToolTip="Show or hide" Click="OnToggleShowPassword">
                                         <TextBlock x:Name="ShowHideGlyph" Style="{StaticResource Glyph}" Text="&#xE7B3;"/>
