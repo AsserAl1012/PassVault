@@ -1,0 +1,54 @@
+<UserControl x:Class="PassVault.App.LockMechanism"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- A pin-tumbler lock in cross-section. Four pins, because four is what the unlock
+         actually needs: your stick, this PC's chip, your key, your vault. Each one seats
+         when that thing is genuinely in hand. Nothing here is faked and nothing is padded. -->
+    <StackPanel HorizontalAlignment="Center">
+        <Canvas Width="160" Height="46">
+
+            <Rectangle x:Name="Pin1" Canvas.Left="20" Canvas.Top="18" Width="6" Height="22" RadiusX="2" RadiusY="2">
+                <Rectangle.Fill><SolidColorBrush x:Name="Ink1" Color="{StaticResource HairStrongColor}"/></Rectangle.Fill>
+                <Rectangle.RenderTransform><TranslateTransform x:Name="T1" Y="-10"/></Rectangle.RenderTransform>
+            </Rectangle>
+
+            <Rectangle x:Name="Pin2" Canvas.Left="52" Canvas.Top="18" Width="6" Height="22" RadiusX="2" RadiusY="2">
+                <Rectangle.Fill><SolidColorBrush x:Name="Ink2" Color="{StaticResource HairStrongColor}"/></Rectangle.Fill>
+                <Rectangle.RenderTransform><TranslateTransform x:Name="T2" Y="-6"/></Rectangle.RenderTransform>
+            </Rectangle>
+
+            <Rectangle x:Name="Pin3" Canvas.Left="84" Canvas.Top="18" Width="6" Height="22" RadiusX="2" RadiusY="2">
+                <Rectangle.Fill><SolidColorBrush x:Name="Ink3" Color="{StaticResource HairStrongColor}"/></Rectangle.Fill>
+                <Rectangle.RenderTransform><TranslateTransform x:Name="T3" Y="-13"/></Rectangle.RenderTransform>
+            </Rectangle>
+
+            <Rectangle x:Name="Pin4" Canvas.Left="116" Canvas.Top="18" Width="6" Height="22" RadiusX="2" RadiusY="2">
+                <Rectangle.Fill><SolidColorBrush x:Name="Ink4" Color="{StaticResource HairStrongColor}"/></Rectangle.Fill>
+                <Rectangle.RenderTransform><TranslateTransform x:Name="T4" Y="-8"/></Rectangle.RenderTransform>
+            </Rectangle>
+
+            <!-- The shear line, in four segments so each lights on its own. -->
+            <Rectangle x:Name="Seg1" Canvas.Left="0"   Canvas.Top="42" Width="40" Height="1">
+                <Rectangle.Fill><SolidColorBrush x:Name="Line1" Color="{StaticResource HairlineColor}"/></Rectangle.Fill>
+            </Rectangle>
+            <Rectangle x:Name="Seg2" Canvas.Left="40"  Canvas.Top="42" Width="40" Height="1">
+                <Rectangle.Fill><SolidColorBrush x:Name="Line2" Color="{StaticResource HairlineColor}"/></Rectangle.Fill>
+            </Rectangle>
+            <Rectangle x:Name="Seg3" Canvas.Left="80"  Canvas.Top="42" Width="40" Height="1">
+                <Rectangle.Fill><SolidColorBrush x:Name="Line3" Color="{StaticResource HairlineColor}"/></Rectangle.Fill>
+            </Rectangle>
+            <Rectangle x:Name="Seg4" Canvas.Left="120" Canvas.Top="42" Width="40" Height="1">
+                <Rectangle.Fill><SolidColorBrush x:Name="Line4" Color="{StaticResource HairlineColor}"/></Rectangle.Fill>
+            </Rectangle>
+        </Canvas>
+
+        <TextBlock x:Name="Caption" FontSize="12" Foreground="{StaticResource Muted}"
+                   HorizontalAlignment="Center" Margin="0,16,0,0" MinHeight="16"/>
+
+        <!-- Set once if the machine is being slow. Never ticks, never counts. -->
+        <TextBlock x:Name="Patience" FontSize="12" Foreground="{StaticResource Muted}"
+                   HorizontalAlignment="Center" Margin="0,4,0,0" Opacity="0"
+                   Text="this machine needs a little longer"/>
+    </StackPanel>
+</UserControl>

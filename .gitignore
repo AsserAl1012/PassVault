@@ -1,0 +1,18 @@
+bin/
+obj/
+.vs/
+*.user
+
+# never commit a real vault or key material
+*.vault
+*.key
+*.pvkey
+secrets/
+
+# build output - the published app and the installer are large and regenerated
+dist/
+brand/_sizes.png
+
+# the licence signing key must never be committed
+.passvault-signing-key
+licence.txt

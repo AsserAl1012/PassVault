@@ -1,0 +1,570 @@
+<Application x:Class="PassVault.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="UnlockWindow.xaml">
+    <Application.Resources>
+
+        <!-- ================================================================================
+             COLOURS
+
+             Declared as Color first, brushes derived from them. This is not tidiness: a brush
+             handed out by StaticResource is shared and frozen, and animating it throws
+             "Cannot animate on an immutable object instance". Templates that animate a colour
+             mint their own brush from the Color instead.
+
+             Four flat surface levels. No gradients anywhere except the 1px top bevel.
+             ================================================================================ -->
+
+        <Color x:Key="VoidColor">#FF0E0F12</Color>
+        <Color x:Key="SurfaceColor">#FF15171B</Color>
+        <Color x:Key="RaisedColor">#FF1C1F24</Color>
+        <Color x:Key="ActiveColor">#FF23272E</Color>
+        <Color x:Key="PressColor">#FF121419</Color>
+        <Color x:Key="HairlineColor">#FF2A2E35</Color>
+        <Color x:Key="HairStrongColor">#FF343941</Color>
+        <Color x:Key="BevelColor">#FF3E444D</Color>
+
+        <Color x:Key="TextPrimaryColor">#FFE8EAED</Color>
+        <Color x:Key="TextSecondaryColor">#FF9AA1AB</Color>
+        <Color x:Key="TextDisabledColor">#FF5D646E</Color>
+
+        <!-- Brass. One colour, one meaning: this is live, or this commits. -->
+        <Color x:Key="AccentColor">#FFD8A249</Color>
+        <Color x:Key="AccentHoverColor">#FFE2AE58</Color>
+        <Color x:Key="AccentPressColor">#FFB8873A</Color>
+        <Color x:Key="AccentBevelColor">#FFE6BA6E</Color>
+
+        <Color x:Key="DangerColor">#FFEC6A60</Color>
+        <Color x:Key="SuccessColor">#FF4FB286</Color>
+
+        <!-- The only backgrounds in the product that ever animate: the state band. -->
+        <Color x:Key="IdleWashColor">#FF191B20</Color>
+        <Color x:Key="WorkWashColor">#FF241D10</Color>
+        <Color x:Key="GoodWashColor">#FF10201A</Color>
+        <Color x:Key="BadWashColor">#FF261518</Color>
+
+        <SolidColorBrush x:Key="Void"        Color="{StaticResource VoidColor}"/>
+        <SolidColorBrush x:Key="Surface"     Color="{StaticResource SurfaceColor}"/>
+        <SolidColorBrush x:Key="Raised"      Color="{StaticResource RaisedColor}"/>
+        <SolidColorBrush x:Key="Active"      Color="{StaticResource ActiveColor}"/>
+        <SolidColorBrush x:Key="Hairline"    Color="{StaticResource HairlineColor}"/>
+        <SolidColorBrush x:Key="HairStrong"  Color="{StaticResource HairStrongColor}"/>
+        <SolidColorBrush x:Key="Bevel"       Color="{StaticResource BevelColor}"/>
+        <SolidColorBrush x:Key="Text"        Color="{StaticResource TextPrimaryColor}"/>
+        <SolidColorBrush x:Key="Muted"       Color="{StaticResource TextSecondaryColor}"/>
+        <SolidColorBrush x:Key="Disabled"    Color="{StaticResource TextDisabledColor}"/>
+        <SolidColorBrush x:Key="Accent"      Color="{StaticResource AccentColor}"/>
+        <SolidColorBrush x:Key="Danger"      Color="{StaticResource DangerColor}"/>
+        <SolidColorBrush x:Key="Good"        Color="{StaticResource SuccessColor}"/>
+
+        <!-- ================================================================================
+             TYPE - all in-box on Windows 11, no font file carried. The comma fallback matters:
+             WPF walks the list silently, so this degrades cleanly on Windows 10.
+
+             Cascadia MONO, not Cascadia Code - Code has programming ligatures, and a ligature
+             in a password field fuses two characters into one glyph that is not what was typed.
+             ================================================================================ -->
+
+        <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+        <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
+        <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
+        <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+        <!-- ================================================================================
+             MOTION - the named set. Nothing outside this list animates.
+
+             Three rules, never broken: nothing overshoots (no Back/Elastic/Bounce anywhere),
+             travel never exceeds 10px, and text is never scaled.
+
+             Tick    90ms   press, glyph swap, a pin seating
+             Shift   160ms  hover, focus ring, selection bar, dot colour
+             Travel  240ms  panel change, band state change, detail cross-fade
+             Settle  320ms  window open
+             Throw   220ms  the shear line, once per unlock
+             Breathe 1100ms the one working pin, and nothing else ever loops
+             ================================================================================ -->
+
+        <Duration x:Key="Tick">0:0:0.09</Duration>
+        <Duration x:Key="Shift">0:0:0.16</Duration>
+        <Duration x:Key="Travel">0:0:0.24</Duration>
+        <Duration x:Key="Settle">0:0:0.32</Duration>
+
+        <CubicEase x:Key="EaseOut" EasingMode="EaseOut"/>
+        <CubicEase x:Key="EaseInOut" EasingMode="EaseInOut"/>
+
+        <!-- ================================================================================
+             TEXT ROLES
+             ================================================================================ -->
+
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+        </Style>
+
+        <Style x:Key="Display" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+        </Style>
+
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+        </Style>
+
+        <Style x:Key="Sub" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="Mono" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+        </Style>
+
+        <!-- ================================================================================
+             BUTTONS
+
+             Radius 3. A 1px lighter top edge from a vertical gradient border, so a raised
+             control looks like a machined part catching light from above. Pressing puts that
+             light out, darkens the surface below its resting value, and moves it 1px down.
+
+             Disabled uses explicit colours, never Opacity - fading the whole Border drags the
+             label towards invisible and reads as a rendering bug rather than a state.
+             ================================================================================ -->
+
+        <Style TargetType="Button">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+            <Setter Property="Padding" Value="16,9"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Shape" CornerRadius="3" BorderThickness="1"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <TranslateTransform x:Name="Nudge" Y="0"/>
+                            </Border.RenderTransform>
+                            <Border.Background>
+                                <SolidColorBrush Color="{StaticResource RaisedColor}"/>
+                            </Border.Background>
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Offset="0" Color="{StaticResource BevelColor}"/>
+                                    <GradientStop Offset="0.55" Color="{StaticResource HairlineColor}"/>
+                                    <GradientStop Offset="1" Color="{StaticResource HairlineColor}"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource ActiveColor}"
+                                                            Duration="{StaticResource Shift}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource RaisedColor}"
+                                                            Duration="{StaticResource Shift}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource PressColor}"
+                                                            Duration="{StaticResource Tick}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                            <!-- the light goes out -->
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="BorderBrush.GradientStops[0].Color"
+                                                            To="{StaticResource HairlineColor}"
+                                                            Duration="{StaticResource Tick}"/>
+                                            <DoubleAnimation Storyboard.TargetName="Nudge"
+                                                             Storyboard.TargetProperty="Y" To="1"
+                                                             Duration="{StaticResource Tick}"
+                                                             EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="BorderBrush.GradientStops[0].Color"
+                                                            To="{StaticResource BevelColor}"
+                                                            Duration="{StaticResource Tick}"/>
+                                            <DoubleAnimation Storyboard.TargetName="Nudge"
+                                                             Storyboard.TargetProperty="Y" To="0"
+                                                             Duration="{StaticResource Tick}"
+                                                             EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Shape" Property="Background" Value="{StaticResource Surface}"/>
+                                <Setter TargetName="Shape" Property="BorderBrush" Value="{StaticResource Hairline}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Brass fill. ONLY for things that actually commit: Save, Finish setting up,
+             Make the new stick. Ink is Void, never white - white on brass is 2.29:1. -->
+        <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource Void}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Shape" CornerRadius="3" BorderThickness="1">
+                            <Border.RenderTransform>
+                                <TranslateTransform x:Name="Nudge" Y="0"/>
+                            </Border.RenderTransform>
+                            <Border.Background>
+                                <SolidColorBrush Color="{StaticResource AccentColor}"/>
+                            </Border.Background>
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Offset="0" Color="{StaticResource AccentBevelColor}"/>
+                                    <GradientStop Offset="0.55" Color="{StaticResource AccentColor}"/>
+                                    <GradientStop Offset="1" Color="{StaticResource AccentPressColor}"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource AccentHoverColor}"
+                                                            Duration="{StaticResource Shift}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource AccentColor}"
+                                                            Duration="{StaticResource Shift}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource AccentPressColor}"
+                                                            Duration="{StaticResource Tick}"/>
+                                            <DoubleAnimation Storyboard.TargetName="Nudge"
+                                                             Storyboard.TargetProperty="Y" To="1"
+                                                             Duration="{StaticResource Tick}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Nudge"
+                                                             Storyboard.TargetProperty="Y" To="0"
+                                                             Duration="{StaticResource Tick}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Shape" Property="Background" Value="{StaticResource Surface}"/>
+                                <Setter TargetName="Shape" Property="BorderBrush" Value="{StaticResource Hairline}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Graphite with a brass edge and brass text (7.23:1). For ordinary "Continue"
+             steps - moving forward, not committing anything. -->
+        <Style x:Key="Outline" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <!-- TemplateBinding, so a derived style can retint the edge. -->
+                        <Border x:Name="Shape" CornerRadius="3" BorderThickness="1"
+                                BorderBrush="{TemplateBinding BorderBrush}">
+                            <Border.Background>
+                                <SolidColorBrush Color="{StaticResource RaisedColor}"/>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource ActiveColor}"
+                                                            Duration="{StaticResource Shift}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="Shape"
+                                                            Storyboard.TargetProperty="Background.Color"
+                                                            To="{StaticResource RaisedColor}"
+                                                            Duration="{StaticResource Shift}"
+                                                            EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Shape" Property="BorderBrush" Value="{StaticResource Hairline}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Red edge, red text. Only for a step that destroys something. -->
+        <Style x:Key="Destructive" TargetType="Button" BasedOn="{StaticResource Outline}">
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Danger}"/>
+        </Style>
+
+        <Style x:Key="Quiet" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Shape" CornerRadius="3" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================================================================================
+             TEXT INPUTS
+
+             Focus is a second, always-present 2px border fading its Opacity 0 -> 1. Animating
+             BorderThickness would force a full measure-and-arrange pass on every frame.
+             ================================================================================ -->
+
+        <ControlTemplate x:Key="FieldTemplate" TargetType="TextBoxBase">
+            <Grid>
+                <Border x:Name="Back" CornerRadius="3" BorderThickness="1"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"/>
+                <Border x:Name="Focus" CornerRadius="3" BorderThickness="2" Opacity="0"
+                        BorderBrush="{StaticResource Accent}" IsHitTestVisible="False"/>
+                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Focus"
+                                                 Storyboard.TargetProperty="Opacity" To="1"
+                                                 Duration="{StaticResource Shift}"
+                                                 EasingFunction="{StaticResource EaseOut}"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Focus"
+                                                 Storyboard.TargetProperty="Opacity" To="0"
+                                                 Duration="{StaticResource Shift}"
+                                                 EasingFunction="{StaticResource EaseOut}"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.ExitActions>
+                </Trigger>
+                <Trigger Property="IsReadOnly" Value="True">
+                    <Setter TargetName="Back" Property="Background" Value="{StaticResource Surface}"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+            <Setter Property="Background" Value="{StaticResource Raised}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Hairline}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
+            <Setter Property="Padding" Value="11,9"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template" Value="{StaticResource FieldTemplate}"/>
+        </Style>
+
+        <!-- The credential's name, edited in place as the panel's heading. It is the title of
+             the thing you are looking at, so it should not also sit in a labelled box below. -->
+        <Style x:Key="TitleBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
+            <Setter Property="FontSize" Value="19"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Padding" Value="7,4"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Raised}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="PasswordBox">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
+            <Setter Property="PasswordChar" Value="&#x25CF;"/>
+            <Setter Property="Padding" Value="11,9"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Grid>
+                            <Border x:Name="Back" CornerRadius="3" BorderThickness="1"
+                                    Background="{StaticResource Raised}" BorderBrush="{StaticResource Hairline}"/>
+                            <Border x:Name="Focus" CornerRadius="3" BorderThickness="2" Opacity="0"
+                                    BorderBrush="{StaticResource Accent}" IsHitTestVisible="False"/>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Focus"
+                                                             Storyboard.TargetProperty="Opacity" To="1"
+                                                             Duration="{StaticResource Shift}"
+                                                             EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Focus"
+                                                             Storyboard.TargetProperty="Opacity" To="0"
+                                                             Duration="{StaticResource Shift}"
+                                                             EasingFunction="{StaticResource EaseOut}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================================================================================
+             PANELS - radius 4, flat Surface, one hairline. No shadows anywhere in this product.
+             ================================================================================ -->
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Background" Value="{StaticResource Surface}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Hairline}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- Icon glyphs go in a TextBlock, never as a Button's string Content. Through
+             Content they resolve against the button's inherited UI font and come out as
+             empty boxes; set on the TextBlock itself they render every time. -->
+        <Style x:Key="Glyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+        </Style>
+
+        <Style x:Key="CheckStyle" TargetType="CheckBox">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+        </Style>
+
+    </Application.Resources>
+</Application>
