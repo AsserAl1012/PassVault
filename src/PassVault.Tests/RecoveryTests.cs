@@ -81,6 +81,17 @@ public class RecoveryTests : IDisposable
     }
 
     [Fact]
+    public void A_damaged_stick_does_not_stop_recovery_from_the_spare_copy()
+    {
+        File.WriteAllBytes(VaultStorage.VaultPathOn(_oldStick), new byte[900]);
+
+        var found = Recovery.FindVault(_pc, _oldStick);
+
+        Assert.False(found.FromStick);
+        Assert.NotNull(VaultFile.UnlockWithPhrase(found.Vault, _phrase));
+    }
+
+    [Fact]
     public void Nothing_anywhere_says_so_plainly()
     {
         var emptyPc = NewFolder("bare");

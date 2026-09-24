@@ -230,11 +230,12 @@ public partial class RecoveryWindow : Window
         // just needs the new words typed in once. Rolling back to the PIN screen here was
         // what destroyed the only phrase for a stick that had already been rewritten.
         string? enrolProblem = null;
+        var protection = DeviceProtection.Tpm;
         try
         {
             await Task.Run(() =>
             {
-                var (deviceSecret, protection) = DeviceSecret.Load(_folder);
+                (var deviceSecret, protection) = DeviceSecret.LoadForSetUp(_folder);
                 Enrolment.Enrol(_folder, target, newPhrase, pin, deviceSecret, protection);
             });
         }
@@ -244,6 +245,9 @@ public partial class RecoveryWindow : Window
         }
 
         ShowDone(toChange);
+
+        if (enrolProblem is null && protection == DeviceProtection.Dpapi)
+            Say(UnlockWindow.NoChipNotice);
 
         if (enrolProblem is not null)
             Say($"Your new stick is ready and the words below are the only way into it - write them "

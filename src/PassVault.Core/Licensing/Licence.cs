@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -6,9 +7,14 @@ namespace PassVault.Core.Licensing;
 /// <summary>Who owns this copy.</summary>
 public sealed record Licence(string Name, string Id, DateOnly Issued, string Edition)
 {
-    /// <summary>The exact bytes that get signed. Both sides must build this identically.</summary>
+    /// <summary>
+    /// The exact bytes that get signed. Both sides must build this identically - so the date is
+    /// written in the invariant culture. Formatted in the machine's own culture it came out in
+    /// that culture's calendar (2569 in Thai, 1405 in Persian, a Hijri year in Saudi Arabic), and
+    /// a genuine licence failed its signature check on every PC set up in those languages.
+    /// </summary>
     public string Canonical() =>
-        $"name: {Name}\nid: {Id}\nissued: {Issued:yyyy-MM-dd}\nedition: {Edition}";
+        string.Create(CultureInfo.InvariantCulture, $"name: {Name}\nid: {Id}\nissued: {Issued:yyyy-MM-dd}\nedition: {Edition}");
 }
 
 /// <summary>
@@ -94,7 +100,7 @@ public static class LicenceKey
             || !fields.TryGetValue("sig", out var sig))
             return (null, null);
 
-        if (!DateOnly.TryParse(issued, System.Globalization.CultureInfo.InvariantCulture, out var issuedOn))
+        if (!DateOnly.TryParse(issued, CultureInfo.InvariantCulture, out var issuedOn))
             return (null, null);
 
         byte[] signature;

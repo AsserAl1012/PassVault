@@ -9,6 +9,12 @@ namespace PassVault.Core.Machine;
 public sealed class UnlockException(string message) : Exception(message);
 
 /// <summary>
+/// The save reached the stick - it happened - but this PC's spare copy could not be brought up to
+/// date. Not a failed save: the caller must not undo a change the stick already holds.
+/// </summary>
+public sealed class SpareCopyException(string message, Exception inner) : Exception(message, inner);
+
+/// <summary>
 /// Setting a machine up, and the two ways of opening the vault on it:
 /// the daily one (stick + this machine + PIN) and the recovery one (12 words).
 /// </summary>
@@ -29,6 +35,7 @@ public static class Enrolment
         var header = VaultFile.ReadHeader(vault);
 
         var masterKey = OpenWithPhraseOrExplain(vault, phrase);
+        RequireAuthentic(vault, masterKey);
         var machineId = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
 
         var machine = new MachineFile
@@ -108,6 +115,18 @@ public static class Enrolment
 
         machine.FailedAttempts = 0;
         machine.PinDisabled = false;
+
+        // The PIN was right - but the vault itself has not been checked yet. Until its body
+        // opens under this key, the epoch and revision in its header are plain text anyone
+        // holding the stick can edit. Recording them first let a damaged or doctored header
+        // replace the good spare copy on this PC and wedge the rollback check for good.
+        if (!VaultFile.IsAuthentic(vault, masterKey))
+        {
+            MachineStore.Write(folder, machine);
+            CryptographicOperations.ZeroMemory(masterKey);
+            throw new UnlockException(Damaged);
+        }
+
         machine.HighestEpochSeen = header.Epoch;
         machine.HighestRevisionSeen = header.Revision;
         MachineStore.Write(folder, machine);
@@ -126,27 +145,43 @@ public static class Enrolment
 
         var vault = VaultStorage.ReadVault(stickRoot);
         var masterKey = OpenWithPhraseOrExplain(vault, phrase);
+        RequireAuthentic(vault, masterKey);
         var header = VaultFile.ReadHeader(vault);
 
+        // This machine's setup - its count of wrong PINs, its note of how new the vault is and
+        // its spare copy - belongs to the one vault it is set up for. Some other vault's stick,
+        // opened with that vault's own words, must not reset the count, move the note, or
+        // replace the spare copy of a vault that is not even plugged in.
+        bool ours = true;
         bool isOld = false;
 
         if (MachineStore.IsEnrolled(folder))
         {
             var machine = MachineStore.Read(folder);
-            isOld = VaultFile.IsRollback(header, machine.HighestEpochSeen, machine.HighestRevisionSeen);
+            ours = machine.VaultId == header.VaultId;
 
-            machine.FailedAttempts = 0;
-            machine.PinDisabled = false;
-            if (!isOld)
+            if (ours)
             {
-                machine.HighestEpochSeen = header.Epoch;
-                machine.HighestRevisionSeen = header.Revision;
+                isOld = VaultFile.IsRollback(header, machine.HighestEpochSeen, machine.HighestRevisionSeen);
+
+                machine.FailedAttempts = 0;
+                machine.PinDisabled = false;
+                if (!isOld)
+                {
+                    machine.HighestEpochSeen = header.Epoch;
+                    machine.HighestRevisionSeen = header.Revision;
+                }
+                MachineStore.Write(folder, machine);
             }
-            MachineStore.Write(folder, machine);
         }
 
         // Never let an older vault overwrite the good spare copy on this PC.
-        if (!isOld) MachineStore.WriteMirrorVault(folder, vault);
+        if (ours && !isOld) MachineStore.WriteMirrorVault(folder, vault);
+
+        // The words open an older copy on purpose - that is how a restored backup is used. The
+        // first save then makes it the current vault and writes it over the newer spare copy
+        // here, so move that newer copy somewhere nothing writes over it first.
+        if (ours && isOld) MachineStore.KeepSpareCopy(folder);
 
         return masterKey;
     }
@@ -162,8 +197,29 @@ public static class Enrolment
     public static void SaveVault(string folder, string stickRoot, byte[] vault)
     {
         VaultStorage.WriteVault(stickRoot, vault);
-        MachineStore.WriteMirrorVault(folder, vault);
-        NoteHowNew(folder, VaultFile.ReadHeader(vault));
+
+        // From here on the save has happened - the stick holds it. What follows is this PC
+        // catching up, and a failure in it used to be reported as a failed save: the app put
+        // the old values back on screen over a change the stick already had, refused the next
+        // save as "something else has changed", and never noted how new the vault now was.
+        try
+        {
+            // The spare copy here belongs to the vault this PC is set up for, not to whichever
+            // one happens to be open.
+            var header = VaultFile.ReadHeader(vault);
+            if (MachineStore.IsEnrolled(folder) && MachineStore.Read(folder).VaultId != header.VaultId) return;
+
+            // The note first: it is what the rollback check reads, so it must not be the part
+            // a full or locked disk leaves behind.
+            NoteHowNew(folder, header);
+            MachineStore.WriteMirrorVault(folder, vault);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new SpareCopyException(
+                "Saved to your stick, but the spare copy on this PC could not be updated. "
+                + "It catches up the next time you unlock.", ex);
+        }
     }
 
     /// <summary>Remember the newest vault this machine has seen. Never moves backwards.</summary>
@@ -172,6 +228,10 @@ public static class Enrolment
         if (!MachineStore.IsEnrolled(folder)) return;
 
         var machine = MachineStore.Read(folder);
+
+        // Another vault's epoch and revision mean nothing against this one's.
+        if (machine.VaultId != header.VaultId) return;
+
         bool newer = header.Epoch > machine.HighestEpochSeen
                      || (header.Epoch == machine.HighestEpochSeen && header.Revision > machine.HighestRevisionSeen);
         if (!newer) return;
@@ -179,6 +239,21 @@ public static class Enrolment
         machine.HighestEpochSeen = header.Epoch;
         machine.HighestRevisionSeen = header.Revision;
         MachineStore.Write(folder, machine);
+    }
+
+    /// <summary>
+    /// The newest revision of this vault, at this epoch, that this machine has already seen -
+    /// the number the next save has to land above (see <see cref="VaultFile.Save"/>). Zero when
+    /// this machine is set up for no vault, another vault, or another epoch.
+    /// </summary>
+    public static long RevisionSeen(string folder, VaultHeader header)
+    {
+        if (!MachineStore.IsEnrolled(folder)) return 0;
+
+        var machine = MachineStore.Read(folder);
+        return machine.VaultId == header.VaultId && machine.HighestEpochSeen == header.Epoch
+            ? machine.HighestRevisionSeen
+            : 0;
     }
 
     /// <summary>
@@ -205,6 +280,20 @@ public static class Enrolment
             Directory.Exists(stickRoot)
                 ? $"{which} is not at {stickRoot} - there is no vault there. Plug the right stick in."
                 : $"{which} is not plugged in. Plug it in and try again.");
+    }
+
+    private const string Damaged =
+        "The vault on this stick is damaged - it no longer matches its own seal - so it was not opened, "
+        + "and the spare copy on this PC was left alone. That spare copy, or a backup file, plus your "
+        + "12 words will get everything back.";
+
+    /// <summary>Refuse a vault whose body does not open under the key its own slot just gave up.</summary>
+    private static void RequireAuthentic(byte[] vault, byte[] masterKey)
+    {
+        if (VaultFile.IsAuthentic(vault, masterKey)) return;
+
+        CryptographicOperations.ZeroMemory(masterKey);
+        throw new UnlockException(Damaged);
     }
 
     internal static byte[] OpenWithPhraseOrExplain(byte[] vault, string phrase)

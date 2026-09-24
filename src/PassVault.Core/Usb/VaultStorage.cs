@@ -33,6 +33,14 @@ public static class VaultStorage
             throw new InvalidOperationException(
                 "This stick is already set up. Setting it up again would throw away the vault on it.");
 
+        // A vault whose keyfile has gone missing is still somebody's vault, and its 12 words
+        // still open it. IsSetUp wants both files, so it called this stick empty - and setting
+        // it up moved that vault to .bak, where the very next save deleted it.
+        if (VaultExists(root))
+            throw new InvalidOperationException(
+                "This stick already holds a PassVault vault, though its keyfile is missing. Setting it up "
+                + "again would throw that vault away - and your 12 words still open it.");
+
         Directory.CreateDirectory(FolderOn(root));
 
         var (file, masterKey, phrase) = VaultFile.Create();
@@ -62,8 +70,14 @@ public static class VaultStorage
     /// while the previous copy is still there - so fall back to it rather than failing.
     /// </summary>
     public static byte[] ReadVault(string root)
+        => ReadNewestCopy(VaultPathOn(root), "There is no vault on this drive.");
+
+    /// <summary>
+    /// Read a file that is only ever written through <see cref="WriteFileSafely"/>: finish an
+    /// interrupted write first, then the file itself, then the copy it replaced.
+    /// </summary>
+    public static byte[] ReadNewestCopy(string path, string whenMissing)
     {
-        var path = VaultPathOn(root);
         FinishInterruptedWrite(path);
 
         if (File.Exists(path)) return File.ReadAllBytes(path);
@@ -71,7 +85,7 @@ public static class VaultStorage
         var backup = path + BackupSuffix;
         if (File.Exists(backup)) return File.ReadAllBytes(backup);
 
-        throw new FileNotFoundException("There is no vault on this drive.", path);
+        throw new FileNotFoundException(whenMissing, path);
     }
 
     /// <summary>

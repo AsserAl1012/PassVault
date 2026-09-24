@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json;
 using PassVault.Core.Model;
 using PassVault.Core.Usb;
 using PassVault.Core.Vault;
@@ -22,16 +24,25 @@ public static class Recovery
     /// </summary>
     public static VaultSource FindVault(string folder, string? stickRoot)
     {
+        // Either copy can be the broken one - a broken stick is half the reason anyone is here.
+        // One that cannot be read is passed over; it used to fail the whole search, and with it
+        // a recovery the perfectly good other copy could have done.
+        bool damaged = false;
+
         byte[]? onStick = stickRoot is not null && VaultStorage.IsSetUp(stickRoot)
-            ? VaultStorage.ReadVault(stickRoot)
+            ? ReadableOrNull(() => VaultStorage.ReadVault(stickRoot), ref damaged)
             : null;
 
-        byte[]? onPc = MachineStore.HasMirrorVault(folder) ? MachineStore.ReadMirrorVault(folder) : null;
+        byte[]? onPc = MachineStore.HasMirrorVault(folder)
+            ? ReadableOrNull(() => MachineStore.ReadMirrorVault(folder), ref damaged)
+            : null;
 
         if (onStick is null && onPc is null)
-            throw new UnlockException(
-                "There is nothing to recover from - no vault on a stick, and no spare copy on this PC. "
-                + "If you have a backup file, restore from that instead.");
+            throw new UnlockException(damaged
+                ? "The vault on the stick and the spare copy on this PC are both damaged. "
+                  + "If you have a backup file, restore from that instead."
+                : "There is nothing to recover from - no vault on a stick, and no spare copy on this PC. "
+                  + "If you have a backup file, restore from that instead.");
 
         if (onStick is null) return new VaultSource(onPc!, "the spare copy on this PC", false);
         if (onPc is null) return new VaultSource(onStick, $"your stick ({stickRoot})", true);
@@ -43,6 +54,25 @@ public static class Recovery
         return stickIsNewer
             ? new VaultSource(onStick, $"your stick ({stickRoot})", true)
             : new VaultSource(onPc, "the spare copy on this PC, which is newer than the stick", false);
+    }
+
+    private static byte[]? ReadableOrNull(Func<byte[]> read, ref bool damaged)
+    {
+        try
+        {
+            var bytes = read();
+            VaultFile.ReadHeader(bytes);
+            return bytes;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;   // Gone since we looked - unplugged, say. Not damage.
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
+        {
+            damaged = true;
+            return null;
+        }
     }
 
     /// <summary>
@@ -112,7 +142,8 @@ public static class Recovery
     public static string SuggestBackupName(byte[] vault, DateTime today)
     {
         var header = VaultFile.ReadHeader(vault);
-        return $"passvault-backup-{today:yyyy-MM-dd}-epoch{header.Epoch}-rev{header.Revision}.pv";
+        return string.Create(CultureInfo.InvariantCulture,
+            $"passvault-backup-{today:yyyy-MM-dd}-epoch{header.Epoch}-rev{header.Revision}.pv");
     }
 
     /// <summary>

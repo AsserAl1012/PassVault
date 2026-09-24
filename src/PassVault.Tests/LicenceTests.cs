@@ -43,6 +43,25 @@ public class LicenceTests : IDisposable
         Assert.Equal("owner", licence.Edition);
     }
 
+    [Theory]
+    [InlineData("th-TH")]   // Thai Buddhist calendar
+    [InlineData("fa-IR")]   // Persian calendar
+    [InlineData("ar-SA")]   // Hijri calendar
+    public void A_licence_checks_out_whatever_language_the_pc_is_in(string culture)
+    {
+        var block = Issue("Asser Moemen");
+        var before = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo(culture);
+            Assert.NotNull(LicenceKey.Verify(block, _publicKey));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = before;
+        }
+    }
+
     [Fact]
     public void Changing_the_name_breaks_it()
     {

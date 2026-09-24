@@ -53,6 +53,26 @@ public static class DeviceSecret
         return (secret, protection);
     }
 
+    /// <summary>
+    /// <see cref="Load"/> for the moment this machine is being set up: a secret that can no longer
+    /// be opened - the chip was cleared, the board replaced, Windows reinstalled over a kept profile -
+    /// is replaced instead of failing the set-up too. That is safe only here: setting up writes a
+    /// new PIN slot, and the old secret opened nothing else. Load alone kept throwing, so the one
+    /// fix the error message offered could never work.
+    /// </summary>
+    public static (byte[] Secret, DeviceProtection Protection) LoadForSetUp(string folder, string tpmKeyName = TpmKeyName)
+    {
+        try
+        {
+            return Load(folder, tpmKeyName);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or CryptographicException)
+        {
+            Forget(folder, tpmKeyName);
+            return Load(folder, tpmKeyName);
+        }
+    }
+
     public static bool Exists(string folder) => File.Exists(Path.Combine(folder, FileName));
 
     /// <summary>
