@@ -70,6 +70,7 @@ public partial class MainWindow : Window
     public MainWindow(string stickRoot, byte[] masterKey)
     {
         InitializeComponent();
+        ScreenGuard.Protect(this);
 
         foreach (var box in new[] { UsernameBox, EmailBox, PasswordBoxText })
         {
@@ -757,7 +758,8 @@ public partial class MainWindow : Window
 
     private void ShowStatus()
     {
-        _restingDetail = $"{_stickRoot}  ·  {Living.Count} credential{(Living.Count == 1 ? "" : "s")}";
+        _restingDetail = $"{_stickRoot}  ·  {Living.Count} credential{(Living.Count == 1 ? "" : "s")}"
+                         + (ScreenGuard.On ? "" : $"  ·  screenshots and screen sharing can see this window");
         if (!_holdingMessage)
         {
             Band.State = "Vault open";

@@ -30,6 +30,7 @@ public partial class App : Application
         }
 
         DispatcherUnhandledException += OnUnhandled;
+        ScreenGuard.Decide(e.Args);
         base.OnStartup(e);
     }
 

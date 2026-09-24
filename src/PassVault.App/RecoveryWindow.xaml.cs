@@ -26,7 +26,11 @@ public partial class RecoveryWindow : Window
     private string? _targetStick;
     private string _newPhrase = "";
 
-    public RecoveryWindow() => InitializeComponent();
+    public RecoveryWindow()
+    {
+        InitializeComponent();
+        ScreenGuard.Protect(this);
+    }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {

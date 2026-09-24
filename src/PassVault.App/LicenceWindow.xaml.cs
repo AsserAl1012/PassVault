@@ -17,7 +17,11 @@ public partial class LicenceWindow : Window
 
     public Licence? Licence { get; private set; }
 
-    public LicenceWindow() => InitializeComponent();
+    public LicenceWindow()
+    {
+        InitializeComponent();
+        ScreenGuard.Protect(this);
+    }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
