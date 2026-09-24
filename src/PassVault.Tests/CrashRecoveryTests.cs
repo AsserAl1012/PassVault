@@ -89,6 +89,26 @@ public class CrashRecoveryTests : IDisposable
     }
 
     /// <summary>
+    /// The spare copy on this PC goes through the same write, so an interruption there leaves the
+    /// same state - and the spare copy is read exactly when the stick is gone.
+    /// </summary>
+    [Fact]
+    public void An_interrupted_write_of_the_spare_copy_is_finished_too()
+    {
+        var masterKey = Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey;
+        var saved = VaultFile.Save(VaultStorage.ReadVault(_stick), masterKey, []);
+
+        var mirror = MachineStore.MirrorVaultPathIn(_pc);
+        File.WriteAllBytes(mirror + ".tmp", saved);
+        File.Move(mirror, mirror + ".bak", overwrite: true);
+
+        Assert.True(MachineStore.HasMirrorVault(_pc));
+        Assert.Equal(VaultFile.ReadHeader(saved).Revision, VaultFile.ReadHeader(MachineStore.ReadMirrorVault(_pc)).Revision);
+        Assert.Equal(VaultFile.ReadHeader(saved).Revision,
+                     VaultFile.ReadHeader(Recovery.FindVault(_pc, stickRoot: null).Vault).Revision);
+    }
+
+    /// <summary>
     /// machine.pvm is rewritten twice on every unlock. Dying mid-write used to leave the PC
     /// claiming it had never been set up, with a good copy one rename away.
     /// </summary>

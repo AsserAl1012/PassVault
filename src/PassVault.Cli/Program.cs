@@ -216,10 +216,20 @@ static int Add(string root)
         Notes = Optional("Notes"),
     });
 
-    var saved = VaultFile.Save(vault, masterKey, entries);
-    Enrolment.SaveVault(MachineStore.DefaultFolder, root, saved);
+    var folder = MachineStore.DefaultFolder;
+    var saved = VaultFile.Save(vault, masterKey, entries, Enrolment.RevisionSeen(folder, VaultFile.ReadHeader(vault)));
+    var where = "on the stick and in the spare copy here";
+    try
+    {
+        Enrolment.SaveVault(folder, root, saved);
+    }
+    catch (SpareCopyException behind)
+    {
+        Console.WriteLine($"\n{behind.Message}");   // saved all the same - the stick has it
+        where = "on the stick";
+    }
 
-    Console.WriteLine($"\nSaved. {entries.Count(e => !e.Deleted)} credential(s), on the stick and in the spare copy here.");
+    Console.WriteLine($"\nSaved. {entries.Count(e => !e.Deleted)} credential(s), {where}.");
     return 0;
 }
 

@@ -96,6 +96,11 @@ final class PhoneVault: ObservableObject {
         try incoming.write(to: vaultPath, options: [.atomic, .completeFileProtection])
 
         // A different vault, or a re-keyed one, means the old way in no longer fits.
+        //
+        // Nothing here has been authenticated yet - the header is plain text, and only opening
+        // the body proves it. So how new the vault is gets recorded by finishOpening, after the
+        // body opens, never from this header: a backup whose header had been edited used to set
+        // the numbers sky-high, fail to open, and then have every genuine copy refused as older.
         if state == nil || state?.vaultId != header.vaultId || header.epoch != state?.highestEpochSeen {
             Keychain.forgetMasterKey()
             state = PhoneState(
@@ -103,14 +108,11 @@ final class PhoneVault: ObservableObject {
                 vaultId: header.vaultId,
                 pinSlot: nil,
                 kdf: header.kdf,
-                highestEpochSeen: header.epoch,
-                highestRevisionSeen: header.revision,
+                highestEpochSeen: 0,
+                highestRevisionSeen: 0,
                 failedAttempts: 0,
                 pinDisabled: false
             )
-        } else {
-            state?.highestEpochSeen = header.epoch
-            state?.highestRevisionSeen = header.revision
         }
         saveState()
     }

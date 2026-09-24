@@ -61,11 +61,20 @@ public partial class MainWindow : Window
     private bool _closingForReal;
     private bool _holdingMessage;
     private bool _badMessage;
+
+    /// <summary>Set by Persist when the stick took the save but this PC's spare copy did not.</summary>
+    private string? _savedWithWarning;
     private string _restingDetail = "";
 
     public MainWindow(string stickRoot, byte[] masterKey)
     {
         InitializeComponent();
+
+        foreach (var box in new[] { UsernameBox, EmailBox, PasswordBoxText })
+        {
+            CommandManager.AddPreviewCanExecuteHandler(box, OnFieldCanCopy);
+            CommandManager.AddPreviewExecutedHandler(box, OnFieldCopyCommand);
+        }
 
         _stickRoot = stickRoot;
         _masterKey = masterKey;
@@ -77,6 +86,9 @@ public partial class MainWindow : Window
         _revision = header.Revision;
         _all = VaultFile.ReadEntries(vault, masterKey);
     }
+
+    /// <summary>Something the user has to be told as the vault opens - it stays until they act.</summary>
+    public string? StartupNotice { get; init; }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -91,6 +103,7 @@ public partial class MainWindow : Window
         _confirmWatch.Tick += (_, _) => CancelDelete();
 
         ShowLicence();
+        if (StartupNotice is not null) Toast(StartupNotice, good: false);
         SearchBox.Focus();
     }
 
@@ -226,6 +239,8 @@ public partial class MainWindow : Window
         _passwordHidden = true;
         PaintPassword();
 
+        foreach (var box in new[] { NameBox, UsernameBox, EmailBox, NotesBox }) ForgetUndo(box);
+
         _filling = false;
         SaveButton.IsEnabled = false;
         Details.Visibility = Visibility.Visible;
@@ -299,6 +314,7 @@ public partial class MainWindow : Window
         _filling = true;
         PasswordBoxText.Text = Masked ? Dots : _realPassword;
         PasswordBoxText.IsReadOnly = Masked;
+        ForgetUndo(PasswordBoxText);
 
         // The icon follows what the box is really doing, not the flag. Driving it from
         // _passwordHidden meant a new credential showed its password in plain text under an
@@ -306,6 +322,18 @@ public partial class MainWindow : Window
         ShowHideGlyph.Text = Masked ? "" : "";
         ShowHideButton.ToolTip = Masked ? "Show the password" : "Hide the password";
         _filling = false;
+    }
+
+    /// <summary>
+    /// A value set from code is an ordinary, undoable edit in a WPF TextBox - only a data-bound
+    /// value clears the undo stack. These boxes are refilled for every credential, so Ctrl+Z
+    /// walked back into the previous one: another entry's username, or the dots, now editable
+    /// and saved as the password (the idle lock saves unasked). Switching undo off clears it.
+    /// </summary>
+    private static void ForgetUndo(TextBox box)
+    {
+        box.IsUndoEnabled = false;
+        box.IsUndoEnabled = true;
     }
 
     private void OnToggleShowPassword(object sender, RoutedEventArgs e)
@@ -393,7 +421,7 @@ public partial class MainWindow : Window
         SaveButton.IsEnabled = false;
         ApplyFilter();
         ShowStatus();
-        Toast("Saved to your stick and the spare copy");
+        Toast(_savedWithWarning ?? "Saved to your stick and the spare copy", good: _savedWithWarning is null);
         return true;
     }
 
@@ -464,7 +492,7 @@ public partial class MainWindow : Window
         Choose(null);
         ApplyFilter();
         ShowStatus();
-        Toast("Deleted");
+        Toast(_savedWithWarning ?? "Deleted", good: _savedWithWarning is null);
     }
 
     /// <summary>
@@ -477,6 +505,8 @@ public partial class MainWindow : Window
     /// </summary>
     private bool Persist()
     {
+        _savedWithWarning = null;
+
         byte[] onDisk;
         VaultHeader header;
 
@@ -512,10 +542,30 @@ public partial class MainWindow : Window
 
         try
         {
-            var saved = VaultFile.Save(onDisk, _masterKey, _all);
-            Enrolment.SaveVault(MachineStore.DefaultFolder, _stickRoot, saved);
-            _revision = header.Revision + 1;
+            // Land above everything this PC has seen, not just above the copy on the drive. After
+            // a restore with the 12 words - or a stick swapped for an older copy while this was
+            // open - counting on from the drive gave a save the next PIN unlock refused as a
+            // rollback, and it went on refusing every save until the numbers caught up.
+            var folder = MachineStore.DefaultFolder;
+            var saved = VaultFile.Save(onDisk, _masterKey, _all, Enrolment.RevisionSeen(folder, header));
+            try
+            {
+                Enrolment.SaveVault(folder, _stickRoot, saved);
+            }
+            catch (SpareCopyException behind)
+            {
+                // Saved - the stick has it. Only this PC's copy is behind, so keep the change.
+                _savedWithWarning = behind.Message;
+            }
+            _revision = VaultFile.ReadHeader(saved).Revision;
             return true;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // VaultFile.Save refuses to seal a header that no longer matches its own seal again.
+            Toast("The vault on your stick has been changed or damaged since it was opened - it no longer "
+                  + "matches its own seal. Nothing was written.", good: false);
+            return false;
         }
         catch (Exception ex)
         {
@@ -562,13 +612,26 @@ public partial class MainWindow : Window
     private void OnCopyPassword(object sender, RoutedEventArgs e) => Copy(CurrentPassword(), "Password");
 
     /// <summary>
-    /// Ctrl+C is the obvious thing to press once a password is on screen, and a plain Ctrl+C
-    /// puts it on the clipboard with no timer, no history opt-out and nothing to wipe it.
-    /// Send it through the same door as the copy buttons instead.
+    /// A field's own Copy puts its text on the clipboard with no timer, no history opt-out and
+    /// nothing to wipe it. Catching the Ctrl+C key was not enough: Ctrl+Insert, Shift+Delete
+    /// and the right-click menu's Copy all went straight past it. Every one of them arrives as
+    /// the Copy or Cut command, so that is what gets sent through the same door as the copy
+    /// buttons - the whole field, like the button, which is why it needs no selection.
     /// </summary>
-    private void OnFieldCopyKey(object sender, KeyEventArgs e)
+    private static bool IsCopy(ICommand command)
+        => command == ApplicationCommands.Copy || command == ApplicationCommands.Cut;
+
+    private void OnFieldCanCopy(object sender, CanExecuteRoutedEventArgs e)
     {
-        if ((e.Key != Key.C && e.Key != Key.X) || Keyboard.Modifiers != ModifierKeys.Control) return;
+        if (!IsCopy(e.Command)) return;
+
+        e.CanExecute = true;
+        e.Handled = true;
+    }
+
+    private void OnFieldCopyCommand(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (!IsCopy(e.Command)) return;
 
         e.Handled = true;
 

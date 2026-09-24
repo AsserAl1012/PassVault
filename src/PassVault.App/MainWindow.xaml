@@ -211,8 +211,7 @@
 
                             <TextBlock Text="Username" Style="{StaticResource Label}"/>
                             <Grid>
-                                <TextBox x:Name="UsernameBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"
-                                         PreviewKeyDown="OnFieldCopyKey"/>
+                                <TextBox x:Name="UsernameBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"/>
                                 <Button Style="{StaticResource IconButton}" ToolTip="Copy"
                                         HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyUsername">
                                     <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
@@ -221,8 +220,7 @@
 
                             <TextBlock Text="Email" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
-                                <TextBox x:Name="EmailBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"
-                                         PreviewKeyDown="OnFieldCopyKey"/>
+                                <TextBox x:Name="EmailBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"/>
                                 <Button Style="{StaticResource IconButton}" ToolTip="Copy"
                                         HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyEmail">
                                     <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
@@ -232,7 +230,6 @@
                             <TextBlock Text="Password" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
                                 <TextBox x:Name="PasswordBoxText" TextChanged="OnFieldEdited"
-                                         PreviewKeyDown="OnFieldCopyKey"
                                          FontFamily="Consolas" Padding="10,8,80,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,3,0">
                                     <Button x:Name="ShowHideButton" Style="{StaticResource IconButton}"

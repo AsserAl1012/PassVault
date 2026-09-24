@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using PassVault.Core.Crypto;
 using PassVault.Core.Machine;
 using PassVault.Core.Usb;
+using PassVault.Core.Vault;
 
 namespace PassVault.App;
 
@@ -18,6 +19,18 @@ public partial class UnlockWindow : Window
 
     private UsbStick? _stick;
     private string? _phraseForSetup;
+
+    /// <summary>Handed to the vault window when it opens - see OnPinChosen.</summary>
+    private string? _noticeForVault;
+
+    /// <summary>
+    /// DeviceProtection.Dpapi promises "weaker, and the app says so". The console tool said so;
+    /// the app never did - it fell back without a word while its manual described the TPM.
+    /// </summary>
+    internal const string NoChipNotice =
+        "No usable TPM chip was found, so this PC's secret is tied to your Windows account instead. "
+        + "That is weaker - someone who can log in as you can get it. Everything still works; it just "
+        + "leans more on your PIN.";
     private bool _midFlow;
     private bool _tryingPin;
 
@@ -43,8 +56,14 @@ public partial class UnlockWindow : Window
 
         if (withVault is not null)
         {
+            // An error on screen stays until the user acts - the rollback refusal above all. The
+            // poll repainted the band green every two seconds while the same stick sat there,
+            // and "N tries left" below wrote over the reason, so "someone may have put an old
+            // copy back" read as a PIN typo. Repaint only when the stick itself has changed.
+            bool sameStick = _stick?.Root == withVault.Root;
             _stick = withVault;
-            SetStatus("Stick connected", Mood.Good, $"{withVault.Root}  ·  {withVault.Label}");
+            if (!(sameStick && Band.Mood == Mood.Bad))
+                SetStatus("Stick connected", Mood.Good, $"{withVault.Root}  ·  {withVault.Label}");
             ShowUnlockOrEnrol();
 
             // Two set-up sticks is the realistic case right after a replacement. Picking the
@@ -91,7 +110,33 @@ public partial class UnlockWindow : Window
             return;
         }
 
-        var machine = MachineStore.Read(_folder);
+        MachineFile machine;
+        try
+        {
+            machine = MachineStore.Read(_folder);
+        }
+        catch (FileNotFoundException)
+        {
+            // machine.pvm is there but no copy of it can be read. Left to escape, this took the
+            // whole app down on every launch - from the timer, before the 12 words or the
+            // recovery wizard could even be reached. Setting the PC up again replaces it.
+            Show(EnrolPanel);
+            Say("This PC's setup file is damaged. Type your 12 words to set it up again.", error: false);
+            return;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say("Could not read this PC's setup file just now. Trying again...", error: false);
+            return;   // the two-second poll comes back here
+        }
+
+        if (RekeyedSinceSetUp(machine))
+        {
+            Show(EnrolPanel);
+            Say("This stick was re-keyed on another PC, so the PIN here no longer fits. "
+                + "Type the new 12 words to set this PC up again.", error: false);
+            return;
+        }
 
         if (machine.PinDisabled)
         {
@@ -104,10 +149,32 @@ public partial class UnlockWindow : Window
         {
             Show(PinPanel);
             PinBox.Focus();
-        }
 
-        if (machine.FailedAttempts > 0)
-            Say($"{Enrolment.MaxAttempts - machine.FailedAttempts} tries left.");
+            if (machine.FailedAttempts > 0)
+                Say($"{Enrolment.MaxAttempts - machine.FailedAttempts} tries left.");
+        }
+    }
+
+    /// <summary>
+    /// A re-key on another PC leaves this one's PIN slot fitting keys that no longer exist. The
+    /// PIN can only say "set this machine up again", and the words on their own just open the
+    /// vault - set-up was only ever offered to a PC with no machine file, so the PIN here stayed
+    /// dead for good. A vault the words then fail to authenticate changes nothing.
+    /// </summary>
+    private bool RekeyedSinceSetUp(MachineFile machine)
+    {
+        if (_stick is null) return false;
+
+        try
+        {
+            var header = VaultFile.ReadHeader(VaultStorage.ReadVault(_stick.Root));
+            return header.VaultId == machine.VaultId && header.Epoch > machine.EpochAtEnrolment;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                                       or System.Text.Json.JsonException)
+        {
+            return false;   // Unlocking will say what is wrong with it.
+        }
     }
 
     // ---- setting up a brand new stick ----
@@ -187,7 +254,8 @@ public partial class UnlockWindow : Window
         await RunSlowly("Setting this PC up", "Argon2id · 64 MiB · 3 passes", report =>
         {
             report.Report(StickFound);
-            var (deviceSecret, protection) = DeviceSecret.Load(_folder);
+            var (deviceSecret, protection) = DeviceSecret.LoadForSetUp(_folder);
+            _noticeForVault = protection == DeviceProtection.Dpapi ? NoChipNotice : null;
             report.Report(ChipRead);
 
             report.Report(Deriving);
@@ -230,12 +298,23 @@ public partial class UnlockWindow : Window
         // below is running, and the lambda then showed a raw NullReferenceException.
         var stickRoot = _stick.Root;
 
+        TimeSpan waitFor;
+        try
+        {
+            waitFor = Enrolment.DelayBeforeNextTry(MachineStore.Read(_folder).FailedAttempts);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            PinBox.Clear();
+            ShowUnlockOrEnrol();   // offers setting this PC up again, and says why
+            return;
+        }
+
         _tryingPin = true;
         PinBox.Clear();
 
         try
         {
-            var waitFor = Enrolment.DelayBeforeNextTry(MachineStore.Read(_folder).FailedAttempts);
             if (waitFor > TimeSpan.Zero)
             {
                 // _midFlow keeps the two-second poll from wiping this message and leaving the
@@ -243,14 +322,31 @@ public partial class UnlockWindow : Window
                 // retype the PIN mid-wait and start a second unlock over the same files.
                 _midFlow = true;
                 PinBox.IsEnabled = false;
+
+                // This try is still going to run when the wait ends - and open the vault if the
+                // PIN is right. Leaving the recovery link live meant the wizard could be open by
+                // then, with the vault opening on top of it.
+                RecoveryLink.Visibility = Visibility.Collapsed;
+
                 Say($"Waiting {waitFor.TotalSeconds:0} seconds after earlier wrong tries...", error: false);
                 await Task.Delay(waitFor);
             }
 
+            bool chipLost = false;
             await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
             {
                 report.Report(StickFound);
-                var (deviceSecret, _) = DeviceSecret.Load(_folder);
+                byte[] deviceSecret;
+                try
+                {
+                    (deviceSecret, _) = DeviceSecret.Load(_folder);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException
+                                               or System.Security.Cryptography.CryptographicException)
+                {
+                    chipLost = true;   // this PC's own secret cannot be opened any more - see below
+                    throw;
+                }
                 report.Report(ChipRead);
 
                 report.Report(Deriving);
@@ -258,6 +354,15 @@ public partial class UnlockWindow : Window
                 report.Report(KeyReady);
                 return key;
             });
+
+            // The chip was cleared or the board replaced: no PIN can ever work here again, and
+            // the message says to set this PC up again - so offer exactly that.
+            if (chipLost)
+            {
+                Show(EnrolPanel);
+                Say("This PC's own secret can no longer be opened - its chip was cleared, or Windows was "
+                    + "reinstalled. Type your 12 words to set this PC up again.", error: false);
+            }
         }
         finally
         {
@@ -268,6 +373,8 @@ public partial class UnlockWindow : Window
 
     private void OnRecovery(object sender, RoutedEventArgs e)
     {
+        if (_tryingPin) return;   // see TryPin: a waiting try still opens the vault when it ends
+
         _watchStick.Stop();
 
         var recovery = new RecoveryWindow();
@@ -289,6 +396,7 @@ public partial class UnlockWindow : Window
         _midFlow = false;
         RecoveryBox.Clear();
         Say("");
+        Band.Mood = Mood.Idle;   // acted on - let Refresh repaint the band
         Refresh();
     }
 
@@ -376,7 +484,7 @@ public partial class UnlockWindow : Window
     {
         if (_stick is null) throw new UnlockException("Your PassVault stick is not plugged in.");
 
-        var main = new MainWindow(_stick.Root, masterKey);
+        var main = new MainWindow(_stick.Root, masterKey) { StartupNotice = _noticeForVault };
 
         _watchStick.Stop();
         Application.Current.MainWindow = main;

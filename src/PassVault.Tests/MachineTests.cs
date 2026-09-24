@@ -296,7 +296,7 @@ public class MachineTests : IDisposable
         machine.HighestRevisionSeen = 40;
         MachineStore.Write(_pc, machine);
 
-        Enrolment.NoteHowNew(_pc, new VaultHeader { Epoch = 2, Revision = 9 });
+        Enrolment.NoteHowNew(_pc, new VaultHeader { VaultId = machine.VaultId, Epoch = 2, Revision = 9 });
 
         Assert.Equal(3, MachineStore.Read(_pc).HighestEpochSeen);
         Assert.Equal(40, MachineStore.Read(_pc).HighestRevisionSeen);
@@ -335,6 +335,137 @@ public class MachineTests : IDisposable
         // The spare must still be the newer one, not the old copy just plugged in.
         var spare = MachineStore.ReadMirrorVault(_pc);
         Assert.Equal(2, VaultFile.ReadHeader(spare).Revision);
+    }
+
+    [Fact]
+    public void A_doctored_header_is_refused_before_anything_is_recorded()
+    {
+        // Anyone with the stick for twenty seconds can edit the plain-text header. The PIN slot
+        // lives on this PC, so the PIN still unwraps the key - which is exactly why nothing in
+        // that header may be believed until the body has opened under it.
+        Enrol();
+        var original = VaultStorage.ReadVault(_stick);
+        VaultStorage.WriteVault(_stick, Swap(original, "\"revision\":1", "\"revision\":9"));
+
+        var error = Assert.Throws<UnlockException>(() => Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret));
+        Assert.Contains("damaged", error.Message);
+
+        Assert.Equal(1, MachineStore.Read(_pc).HighestRevisionSeen);
+        Assert.Equal(1, VaultFile.ReadHeader(MachineStore.ReadMirrorVault(_pc)).Revision);
+        Assert.Equal(0, MachineStore.Read(_pc).FailedAttempts);
+
+        // Put the real one back and the PIN opens it - it is not "older than this machine saw".
+        VaultStorage.WriteVault(_stick, original);
+        Assert.NotNull(Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey);
+    }
+
+    [Fact]
+    public void Another_vaults_stick_opened_with_its_own_words_leaves_this_pcs_setup_alone()
+    {
+        Enrol();
+        var otherStick = NewFolder("other");
+        try
+        {
+            var (otherPhrase, _) = VaultStorage.Initialise(otherStick);
+            var other = VaultStorage.ReadVault(otherStick);
+            var otherKey = VaultFile.UnlockWithPhrase(other, otherPhrase);
+            for (int i = 0; i < 5; i++) other = VaultFile.Save(other, otherKey, []);
+            VaultStorage.WriteVault(otherStick, other);
+
+            Enrolment.UnlockWithPhrase(_pc, otherStick, otherPhrase);
+
+            var machine = MachineStore.Read(_pc);
+            Assert.Equal(1, machine.HighestRevisionSeen);
+            Assert.Equal(machine.VaultId, VaultFile.ReadHeader(MachineStore.ReadMirrorVault(_pc)).VaultId);
+            Assert.NotNull(Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey);
+        }
+        finally
+        {
+            Directory.Delete(otherStick, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_save_on_top_of_a_restored_older_copy_still_opens_with_the_pin()
+    {
+        // MANUAL.md: restored an old copy on purpose? Use your 12 words. That has to be the
+        // end of it - not a PIN that refuses every save until the revision catches up.
+        Enrol();
+        var original = VaultStorage.ReadVault(_stick);
+        var masterKey = Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey;
+        for (int i = 0; i < 3; i++)
+            Enrolment.SaveVault(_pc, _stick, VaultFile.Save(VaultStorage.ReadVault(_stick), masterKey, [new Entry { Name = $"e{i}" }]));
+
+        VaultStorage.WriteVault(_stick, original);
+        Enrolment.UnlockWithPhrase(_pc, _stick, _phrase);
+
+        var onDisk = VaultStorage.ReadVault(_stick);
+        var saved = VaultFile.Save(onDisk, masterKey, [new Entry { Name = "kept" }],
+                                   Enrolment.RevisionSeen(_pc, VaultFile.ReadHeader(onDisk)));
+        Enrolment.SaveVault(_pc, _stick, saved);
+
+        Assert.NotNull(Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey);
+
+        // And the newer copy the restore replaced is still on this PC, somewhere no save reaches.
+        var kept = File.ReadAllBytes(MachineStore.KeptSparePathIn(_pc, MachineStore.Read(_pc).VaultId));
+        Assert.Equal(4, VaultFile.ReadHeader(kept).Revision);
+    }
+
+    [Fact]
+    public void Setting_up_a_new_vault_on_this_pc_keeps_the_spare_copy_of_the_old_one()
+    {
+        // The stick is lost, a new one goes in, and "Set up this stick" is the button on screen.
+        // The spare copy on this PC is then the only copy of the old vault left anywhere.
+        Enrol();
+        var oldId = MachineStore.Read(_pc).VaultId;
+        var newStick = NewFolder("new");
+        try
+        {
+            var (newPhrase, _) = VaultStorage.Initialise(newStick);
+            Enrolment.Enrol(_pc, newStick, newPhrase, Pin, _deviceSecret, DeviceProtection.Tpm);
+            Enrolment.UnlockWithPin(_pc, newStick, Pin, _deviceSecret);
+            Enrolment.UnlockWithPin(_pc, newStick, Pin, _deviceSecret);
+
+            var kept = File.ReadAllBytes(MachineStore.KeptSparePathIn(_pc, oldId));
+            Assert.Equal(oldId, VaultFile.ReadHeader(kept).VaultId);
+            Assert.NotNull(VaultFile.UnlockWithPhrase(kept, _phrase));
+        }
+        finally
+        {
+            Directory.Delete(newStick, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_save_the_stick_took_is_not_reported_as_failed_when_the_spare_copy_cannot_follow()
+    {
+        Enrol();
+        var masterKey = Enrolment.UnlockWithPin(_pc, _stick, Pin, _deviceSecret).MasterKey;
+
+        // Something on this PC holds the spare copy's temp file - here, a folder in its way.
+        Directory.CreateDirectory(MachineStore.MirrorVaultPathIn(_pc) + VaultStorage.TempSuffix);
+
+        var saved = VaultFile.Save(VaultStorage.ReadVault(_stick), masterKey, [new Entry { Name = "kept.com" }]);
+        Assert.Throws<SpareCopyException>(() => Enrolment.SaveVault(_pc, _stick, saved));
+
+        // The stick has the save, and this PC has noted how new it is - so the old copy
+        // cannot be slipped back in while the spare copy is behind.
+        Assert.Equal(2, VaultFile.ReadHeader(VaultStorage.ReadVault(_stick)).Revision);
+        Assert.Equal(2, MachineStore.Read(_pc).HighestRevisionSeen);
+    }
+
+    private static byte[] Swap(byte[] file, string find, string replaceWith)
+    {
+        var needle = System.Text.Encoding.UTF8.GetBytes(find);
+        var replacement = System.Text.Encoding.UTF8.GetBytes(replaceWith);
+        Assert.Equal(needle.Length, replacement.Length);
+
+        var at = file.AsSpan().IndexOf(needle);
+        Assert.True(at >= 0, $"Could not find {find}.");
+
+        var copy = (byte[])file.Clone();
+        replacement.CopyTo(copy, at);
+        return copy;
     }
 
     // ---- after a re-key ----

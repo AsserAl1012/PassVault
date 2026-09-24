@@ -102,6 +102,17 @@ public class UsbTests : IDisposable
     }
 
     [Fact]
+    public void A_stick_that_still_holds_a_vault_is_not_set_up_over_it()
+    {
+        VaultStorage.Initialise(_stick);
+        var vault = VaultStorage.ReadVault(_stick);
+        File.Delete(VaultStorage.KeyfilePathOn(_stick));
+
+        Assert.Throws<InvalidOperationException>(() => VaultStorage.Initialise(_stick));
+        Assert.Equal(vault, VaultStorage.ReadVault(_stick));
+    }
+
+    [Fact]
     public void An_empty_drive_is_not_set_up()
     {
         Assert.False(VaultStorage.IsSetUp(_stick));

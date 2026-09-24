@@ -75,16 +75,48 @@ public static class VaultFile
 
     public static List<Entry> ReadEntries(byte[] file, byte[] masterKey)
     {
-        var (_, headerBytes, body) = Unpack(file);
-        var json = Aead.Open(masterKey, body, headerBytes);
+        var json = OpenBody(file, masterKey);
         return JsonSerializer.Deserialize<List<Entry>>(json, Json) ?? [];
     }
 
-    /// <summary>Write the entries back. The revision goes up by one every save.</summary>
-    public static byte[] Save(byte[] file, byte[] masterKey, IEnumerable<Entry> entries)
+    /// <summary>
+    /// True only if the body was sealed with this master key under these exact header bytes.
+    ///
+    /// Until this passes, nothing in the header is authenticated - the epoch and revision are
+    /// plain text anyone holding the stick can edit. Check this before recording them or
+    /// copying the file anywhere.
+    /// </summary>
+    public static bool IsAuthentic(byte[] file, byte[] masterKey)
     {
+        try
+        {
+            CryptographicOperations.ZeroMemory(OpenBody(file, masterKey));
+            return true;
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Write the entries back. The revision goes up by one every save, and always lands above
+    /// <paramref name="revisionSeen"/> - the newest revision of this vault the device has
+    /// already seen. Counting up from an older copy (one restored with the 12 words, or put
+    /// back while the vault was open) otherwise produced a save the rollback check then
+    /// refused as "older than the one this machine last saw".
+    /// </summary>
+    public static byte[] Save(byte[] file, byte[] masterKey, IEnumerable<Entry> entries, long revisionSeen = 0)
+    {
+        // The save carries this file's header forward - its recovery slot, salt and Argon2
+        // settings - and seals it again. Unless the header still matches its own seal, that
+        // turns a damaged or doctored recovery slot into a perfectly valid vault the 12 words
+        // no longer open, on the stick and the spare copy alike.
+        if (!IsAuthentic(file, masterKey))
+            throw new CryptographicException("The vault there no longer matches its own seal.");
+
         var header = ReadHeader(file);
-        header.Revision++;
+        header.Revision = Math.Max(header.Revision, revisionSeen) + 1;
         return Pack(header, masterKey, entries);
     }
 
@@ -136,6 +168,12 @@ public static class VaultFile
         headerBytes.CopyTo(file, PrefixSize);
         body.CopyTo(file, PrefixSize + headerBytes.Length);
         return file;
+    }
+
+    private static byte[] OpenBody(byte[] file, byte[] masterKey)
+    {
+        var (_, headerBytes, body) = Unpack(file);
+        return Aead.Open(masterKey, body, headerBytes);
     }
 
     private static (VaultHeader Header, byte[] HeaderBytes, byte[] Body) Unpack(byte[] file)

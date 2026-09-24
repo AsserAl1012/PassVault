@@ -53,6 +53,36 @@ public class VaultFileTests
     }
 
     [Fact]
+    public void A_save_lands_above_the_newest_revision_already_seen()
+    {
+        var (file, masterKey, _) = VaultFile.Create();
+
+        Assert.Equal(11, VaultFile.ReadHeader(VaultFile.Save(file, masterKey, [], revisionSeen: 10)).Revision);
+        Assert.Equal(2, VaultFile.ReadHeader(VaultFile.Save(file, masterKey, [], revisionSeen: 0)).Revision);
+    }
+
+    [Fact]
+    public void A_save_never_seals_a_changed_header_again()
+    {
+        // Sealing it again would make the change - a damaged recovery slot, say - a valid vault
+        // that the 12 words no longer open.
+        var (file, masterKey, _) = VaultFile.Create();
+        var changed = Tamper(file, "\"revision\":1", "\"revision\":7");
+
+        Assert.ThrowsAny<CryptographicException>(() => VaultFile.Save(changed, masterKey, [Sample()]));
+    }
+
+    [Fact]
+    public void Only_the_right_key_and_the_untouched_header_are_authentic()
+    {
+        var (file, masterKey, _) = VaultFile.Create();
+
+        Assert.True(VaultFile.IsAuthentic(file, masterKey));
+        Assert.False(VaultFile.IsAuthentic(file, RandomNumberGenerator.GetBytes(32)));
+        Assert.False(VaultFile.IsAuthentic(Tamper(file, "\"revision\":1", "\"revision\":7"), masterKey));
+    }
+
+    [Fact]
     public void The_wrong_phrase_does_not_open_it()
     {
         var (file, _, _) = VaultFile.Create();
