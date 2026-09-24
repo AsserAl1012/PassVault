@@ -64,6 +64,8 @@ public static class VaultStorage
     public static byte[] ReadVault(string root)
     {
         var path = VaultPathOn(root);
+        FinishInterruptedWrite(path);
+
         if (File.Exists(path)) return File.ReadAllBytes(path);
 
         var backup = path + BackupSuffix;
@@ -72,10 +74,32 @@ public static class VaultStorage
         throw new FileNotFoundException("There is no vault on this drive.", path);
     }
 
+    /// <summary>
+    /// Pick up where WriteFileSafely was interrupted.
+    ///
+    /// If the stick was pulled between moving the old file aside and moving the new one into
+    /// place, the newest save is sitting there complete, under .tmp. Putting it back is not
+    /// just tidiness: falling through to the .bak instead hands back a vault one save older
+    /// than this machine has already seen, and the rollback check then accuses the user of
+    /// putting an old copy back. Two safety features were fighting each other.
+    ///
+    /// The .tmp is only ever consulted when the real file is missing, and it is written in
+    /// full before either move happens - so it cannot be a half-written file.
+    /// </summary>
+    private static void FinishInterruptedWrite(string path)
+    {
+        var temp = path + TempSuffix;
+        if (File.Exists(path) || !File.Exists(temp)) return;
+
+        try { File.Move(temp, path); }
+        catch (IOException) { /* Read-only stick. The .bak below still opens. */ }
+        catch (UnauthorizedAccessException) { }
+    }
+
     public static void WriteVault(string root, byte[] file) => WriteFileSafely(VaultPathOn(root), file);
 
     public const string BackupSuffix = ".bak";
-    private const string TempSuffix = ".tmp";
+    public const string TempSuffix = ".tmp";
 
     /// <summary>
     /// Never write straight over the vault. Write a new file first, move the old one aside,

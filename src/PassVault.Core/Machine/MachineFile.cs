@@ -65,16 +65,37 @@ public static class MachineStore
     public static string PathIn(string folder) => Path.Combine(folder, FileName);
     public static string MirrorVaultPathIn(string folder) => Path.Combine(folder, MirrorVaultName);
 
-    public static bool IsEnrolled(string folder) => File.Exists(PathIn(folder));
+    /// <summary>
+    /// Is this PC set up? Asking only about machine.pvm was a bug: this file is rewritten
+    /// twice on every unlock, and if the app dies mid-write the only copy left is the .bak
+    /// sitting right next to it. The PC would then claim it had never been set up and ask
+    /// for the 12 words, with a perfectly good file one rename away.
+    /// </summary>
+    public static bool IsEnrolled(string folder)
+        => File.Exists(PathIn(folder))
+           || File.Exists(PathIn(folder) + VaultStorage.TempSuffix)
+           || File.Exists(PathIn(folder) + VaultStorage.BackupSuffix);
 
     public static MachineFile Read(string folder)
     {
         var path = PathIn(folder);
-        if (!File.Exists(path))
-            throw new FileNotFoundException("This machine is not set up for PassVault.", path);
 
-        return JsonSerializer.Deserialize<MachineFile>(File.ReadAllText(path), Json)
-               ?? throw new InvalidDataException("This machine's file is damaged.");
+        foreach (var candidate in new[] { path, path + VaultStorage.TempSuffix, path + VaultStorage.BackupSuffix })
+        {
+            if (!File.Exists(candidate)) continue;
+
+            try
+            {
+                var machine = JsonSerializer.Deserialize<MachineFile>(File.ReadAllText(candidate), Json);
+                if (machine is not null) return machine;
+            }
+            catch (JsonException)
+            {
+                // Half-written. Try the next copy.
+            }
+        }
+
+        throw new FileNotFoundException("This machine is not set up for PassVault.", path);
     }
 
     public static void Write(string folder, MachineFile machine)
@@ -108,7 +129,8 @@ public static class MachineStore
     /// <summary>Undo the setup on this machine. The vault and the stick are untouched.</summary>
     public static void Forget(string folder)
     {
-        foreach (var path in new[] { PathIn(folder), PathIn(folder) + VaultStorage.BackupSuffix })
+        foreach (var path in new[] { PathIn(folder), PathIn(folder) + VaultStorage.BackupSuffix,
+                                     PathIn(folder) + VaultStorage.TempSuffix })
             if (File.Exists(path)) File.Delete(path);
     }
 }

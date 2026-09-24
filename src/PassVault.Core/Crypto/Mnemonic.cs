@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 
 namespace PassVault.Core.Crypto;
@@ -107,7 +108,19 @@ public static class Mnemonic
     /// </summary>
     public static string Normalise(string phrase)
     {
-        var parts = phrase.ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        // Throw away invisible formatting characters before anything else. A phrase copied
+        // out of a web page, a PDF or a Word document often carries a zero-width space, a
+        // soft hyphen or a byte-order mark. They glue onto the next word, so a perfectly
+        // good phrase gets rejected with "word 3 is not one of the 2048 words" - naming a
+        // word that is spelled correctly. Everything else that is blank becomes a space.
+        var cleaned = new StringBuilder(phrase.Length);
+        foreach (var c in phrase)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.Format) continue;
+            cleaned.Append(char.IsWhiteSpace(c) || char.IsControl(c) ? ' ' : c);
+        }
+
+        var parts = cleaned.ToString().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return string.Join(' ', parts).Normalize(NormalizationForm.FormKD);
     }
 

@@ -7,7 +7,7 @@
         Background="{StaticResource Void}" FontFamily="{StaticResource UiFont}" FontSize="13"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
-        Loaded="OnLoaded" Closed="OnClosed"
+        Loaded="OnLoaded" Closed="OnClosed" Closing="OnClosing"
         PreviewMouseMove="OnUserActive" PreviewKeyDown="OnUserActive">
 
     <Window.Resources>
@@ -211,7 +211,8 @@
 
                             <TextBlock Text="Username" Style="{StaticResource Label}"/>
                             <Grid>
-                                <TextBox x:Name="UsernameBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"/>
+                                <TextBox x:Name="UsernameBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"
+                                         PreviewKeyDown="OnFieldCopyKey"/>
                                 <Button Style="{StaticResource IconButton}" ToolTip="Copy"
                                         HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyUsername">
                                     <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
@@ -220,7 +221,8 @@
 
                             <TextBlock Text="Email" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
-                                <TextBox x:Name="EmailBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"/>
+                                <TextBox x:Name="EmailBox" TextChanged="OnFieldEdited" Padding="10,8,42,8"
+                                         PreviewKeyDown="OnFieldCopyKey"/>
                                 <Button Style="{StaticResource IconButton}" ToolTip="Copy"
                                         HorizontalAlignment="Right" Margin="0,0,3,0" Click="OnCopyEmail">
                                     <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/>
@@ -230,6 +232,7 @@
                             <TextBlock Text="Password" Style="{StaticResource Label}" Margin="0,13,0,5"/>
                             <Grid>
                                 <TextBox x:Name="PasswordBoxText" TextChanged="OnFieldEdited"
+                                         PreviewKeyDown="OnFieldCopyKey"
                                          FontFamily="Consolas" Padding="10,8,80,8"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,3,0">
                                     <Button x:Name="ShowHideButton" Style="{StaticResource IconButton}"
@@ -264,11 +267,28 @@
                               <StackPanel x:Name="FooterConfirm" Orientation="Horizontal"
                                           Visibility="Collapsed" Opacity="0">
                                   <TextBlock x:Name="ConfirmText" VerticalAlignment="Center"
-                                             Margin="0,0,16,0"/>
+                                             Margin="0,0,16,0" MaxWidth="320"
+                                             TextTrimming="CharacterEllipsis"/>
                                   <Button Style="{StaticResource Destructive}" Content="Delete for good"
                                           Click="OnDeleteConfirmed"/>
                                   <Button Style="{StaticResource Quiet}" Content="Cancel"
                                           Margin="8,0,0,0" Click="OnDeleteCancelled"/>
+                              </StackPanel>
+
+                              <!-- Asked whenever something would replace what is on screen:
+                                   another row, Lock, or the X. Before this, the only sign
+                                   your typing had been thrown away was the Save button
+                                   quietly going grey. -->
+                              <StackPanel x:Name="FooterUnsaved" Orientation="Horizontal"
+                                          Visibility="Collapsed" Opacity="0">
+                                  <TextBlock x:Name="UnsavedText" VerticalAlignment="Center"
+                                             Margin="0,0,16,0" MaxWidth="320"
+                                             TextTrimming="CharacterEllipsis"/>
+                                  <Button Style="{StaticResource Primary}" Content="Save"
+                                          Click="OnSaveAndGo"/>
+                                  <Button Style="{StaticResource Quiet}" Content="Discard"
+                                          Margin="8,0,0,0" Foreground="{StaticResource Danger}"
+                                          Click="OnDiscardAndGo"/>
                               </StackPanel>
                           </Grid>
                       </Border>

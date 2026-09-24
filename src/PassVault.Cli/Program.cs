@@ -181,13 +181,24 @@ static int List(string root)
     Console.WriteLine();
     foreach (var e in entries.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
     {
-        Console.WriteLine($"  {e.Name}");
-        if (!string.IsNullOrWhiteSpace(e.Username)) Console.WriteLine($"      username  {e.Username}");
-        if (!string.IsNullOrWhiteSpace(e.Email)) Console.WriteLine($"      email     {e.Email}");
-        if (!string.IsNullOrWhiteSpace(e.Password)) Console.WriteLine($"      password  {e.Password}");
-        if (!string.IsNullOrWhiteSpace(e.Notes)) Console.WriteLine($"      notes     {e.Notes}");
+        // Quoted, and shown whenever the value is not null rather than not blank. This is
+        // the tool the app gets checked against, so it has to show exactly what is stored -
+        // a password of nothing but spaces used to be invisible here too.
+        Console.WriteLine($"  \"{e.Name}\"");
+        Show("username", e.Username);
+        Show("email", e.Email);
+        Show("password", e.Password);
+        Show("notes", e.Notes);
     }
+
+    var deleted = VaultFile.ReadEntries(vault, masterKey).Count(e => e.Deleted);
+    Console.WriteLine($"\n{entries.Count} shown, {deleted} deleted");
     return 0;
+
+    static void Show(string label, string? value)
+    {
+        if (value is not null) Console.WriteLine($"      {label,-8}  \"{value}\"");
+    }
 }
 
 static int Add(string root)

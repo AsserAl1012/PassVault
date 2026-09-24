@@ -132,7 +132,12 @@
         <StackPanel Grid.Row="3">
             <TextBlock x:Name="Message" TextWrapping="Wrap" TextAlignment="Center"
                        FontSize="12" Foreground="{StaticResource Danger}" MinHeight="34"/>
-            <Button Style="{StaticResource Quiet}" Content="Stick lost, stolen or broken?"
+            <!-- Hidden during anything in progress. It used to sit live on top of the
+                 busy screen, so clicking it mid-unlock left you with the recovery wizard
+                 AND a fully open vault - and on the words screen it walked away from a
+                 stick whose phrase had just been shown once. -->
+            <Button x:Name="RecoveryLink" Style="{StaticResource Quiet}"
+                    Content="Stick lost, stolen or broken?"
                     FontSize="12" HorizontalAlignment="Center" Click="OnRecovery"/>
         </StackPanel>
     </Grid>

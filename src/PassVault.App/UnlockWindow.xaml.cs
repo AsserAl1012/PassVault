@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,6 +19,7 @@ public partial class UnlockWindow : Window
     private UsbStick? _stick;
     private string? _phraseForSetup;
     private bool _midFlow;
+    private bool _tryingPin;
 
     public UnlockWindow() => InitializeComponent();
 
@@ -36,13 +38,21 @@ public partial class UnlockWindow : Window
     private void Refresh()
     {
         var sticks = UsbDetect.Find();
-        var withVault = sticks.FirstOrDefault(s => s.IsSetUp);
+        var setUp = sticks.Where(s => s.IsSetUp).ToList();
+        var withVault = setUp.FirstOrDefault();
 
         if (withVault is not null)
         {
             _stick = withVault;
             SetStatus("Stick connected", Mood.Good, $"{withVault.Root}  ·  {withVault.Label}");
             ShowUnlockOrEnrol();
+
+            // Two set-up sticks is the realistic case right after a replacement. Picking the
+            // lower drive letter in silence and then saying "that is not your stick" is the
+            // worst of both - say which one is being used so the other can be unplugged.
+            if (setUp.Count > 1)
+                Say($"Two PassVault sticks are plugged in. Using {withVault.Root}. "
+                    + $"Unplug it to use {setUp[1].Root} instead.", error: false);
             return;
         }
 
@@ -58,7 +68,18 @@ public partial class UnlockWindow : Window
         // cries wolf, so no stick is grey.
         _stick = null;
         SetStatus("No stick plugged in", Mood.Idle, "Plug yours in and this screen will notice");
-        DrivesFound.Text = "";
+
+        // This line existed but was only ever assigned "". On the one screen where knowing
+        // which drives the app can see matters most, it reserved space for nothing.
+        var letters = DriveInfo.GetDrives()
+            .Where(d => d.IsReady)
+            .Select(d => d.Name.TrimEnd('\\'))
+            .ToList();
+        DrivesFound.Text = letters.Count == 0
+            ? "PassVault cannot see any drives at all."
+            : $"Drives PassVault can see: {string.Join(", ", letters)}.  A stick formatted for "
+              + "Linux or a Mac gets no drive letter, and cannot be used.";
+
         Show(NoStickPanel);
     }
 
@@ -160,6 +181,9 @@ public partial class UnlockWindow : Window
         NewPinBox.Clear();
         NewPinAgainBox.Clear();
 
+        var stickRoot = _stick.Root;
+        var setupPhrase = _phraseForSetup;
+
         await RunSlowly("Setting this PC up", "Argon2id · 64 MiB · 3 passes", report =>
         {
             report.Report(StickFound);
@@ -167,7 +191,7 @@ public partial class UnlockWindow : Window
             report.Report(ChipRead);
 
             report.Report(Deriving);
-            var key = Enrolment.Enrol(_folder, _stick.Root, _phraseForSetup, pin, deviceSecret, protection).MasterKey;
+            var key = Enrolment.Enrol(_folder, stickRoot, setupPhrase, pin, deviceSecret, protection).MasterKey;
             report.Report(KeyReady);
             return key;
         });
@@ -187,30 +211,59 @@ public partial class UnlockWindow : Window
 
     private async void TryPin()
     {
+        if (_tryingPin) return;
+
         var pin = PinBox.Password;
-        if (pin.Length != 4 || !pin.All(char.IsAsciiDigit)) return;
-        if (_stick is null) { Say("Plug your stick in first."); return; }
 
-        PinBox.Clear();
-
-        var waitFor = Enrolment.DelayBeforeNextTry(MachineStore.Read(_folder).FailedAttempts);
-        if (waitFor > TimeSpan.Zero)
+        if (pin.Length != 4 || !pin.All(char.IsAsciiDigit))
         {
-            Say($"Waiting {waitFor.TotalSeconds:0} seconds after earlier wrong tries...", error: false);
-            await Task.Delay(waitFor);
+            // A bare return made the app look broken: four asterisks sitting in the box,
+            // Enter doing nothing, no message at all. The setup screen says "A PIN is exactly
+            // 4 digits" for byte-identical input, so the two screens disagreed as well.
+            if (pin.Length > 0) { Say("A PIN is 4 digits, 0 to 9."); PinBox.Clear(); }
+            return;
         }
 
-        await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
-        {
-            report.Report(StickFound);
-            var (deviceSecret, _) = DeviceSecret.Load(_folder);
-            report.Report(ChipRead);
+        if (_stick is null) { Say("Plug your stick in first."); PinBox.Clear(); return; }
 
-            report.Report(Deriving);
-            var key = Enrolment.UnlockWithPin(_folder, _stick.Root, pin, deviceSecret).MasterKey;
-            report.Report(KeyReady);
-            return key;
-        });
+        // Read the drive now. The two-second poll can set _stick to null while the back-off
+        // below is running, and the lambda then showed a raw NullReferenceException.
+        var stickRoot = _stick.Root;
+
+        _tryingPin = true;
+        PinBox.Clear();
+
+        try
+        {
+            var waitFor = Enrolment.DelayBeforeNextTry(MachineStore.Read(_folder).FailedAttempts);
+            if (waitFor > TimeSpan.Zero)
+            {
+                // _midFlow keeps the two-second poll from wiping this message and leaving the
+                // app sitting dead still with a live PIN box - which is what made people
+                // retype the PIN mid-wait and start a second unlock over the same files.
+                _midFlow = true;
+                PinBox.IsEnabled = false;
+                Say($"Waiting {waitFor.TotalSeconds:0} seconds after earlier wrong tries...", error: false);
+                await Task.Delay(waitFor);
+            }
+
+            await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
+            {
+                report.Report(StickFound);
+                var (deviceSecret, _) = DeviceSecret.Load(_folder);
+                report.Report(ChipRead);
+
+                report.Report(Deriving);
+                var key = Enrolment.UnlockWithPin(_folder, stickRoot, pin, deviceSecret).MasterKey;
+                report.Report(KeyReady);
+                return key;
+            });
+        }
+        finally
+        {
+            _tryingPin = false;
+            PinBox.IsEnabled = true;
+        }
     }
 
     private void OnRecovery(object sender, RoutedEventArgs e)
@@ -245,6 +298,7 @@ public partial class UnlockWindow : Window
         if (_stick is null) { Say("Plug your stick in first."); return; }
         if (!Mnemonic.TryParse(phrase, out _, out var problem)) { Say(problem); return; }
 
+        var stickRoot = _stick.Root;
         RecoveryBox.Clear();
         await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
         {
@@ -252,7 +306,7 @@ public partial class UnlockWindow : Window
 
             // The second pin stays up on purpose: your 12 words do not use this PC's chip.
             report.Report(Deriving);
-            var key = Enrolment.UnlockWithPhrase(_folder, _stick.Root, phrase);
+            var key = Enrolment.UnlockWithPhrase(_folder, stickRoot, phrase);
             report.Report(KeyReady);
             return key;
         });
@@ -313,11 +367,18 @@ public partial class UnlockWindow : Window
     private const int Deriving = 3;
     private const int KeyReady = 4;
 
+    /// <summary>
+    /// Build the window first, then stop watching. Reading and decrypting the vault happens
+    /// in that constructor and can throw - and stopping the timer first left this screen
+    /// permanently blind, promising to notice a stick it had stopped looking for.
+    /// </summary>
     private void OpenVault(byte[] masterKey)
     {
-        _watchStick.Stop();
+        if (_stick is null) throw new UnlockException("Your PassVault stick is not plugged in.");
 
-        var main = new MainWindow(_stick!.Root, masterKey);
+        var main = new MainWindow(_stick.Root, masterKey);
+
+        _watchStick.Stop();
         Application.Current.MainWindow = main;
         main.Show();
         Close();
@@ -335,6 +396,13 @@ public partial class UnlockWindow : Window
 
         _midFlow = panel == WordsPanel || panel == PinSetupPanel || panel == EnrolPanel
                    || panel == PhrasePanel || panel == BusyPanel;
+
+        // Live on every screen including the busy one, this was a way to end up with the
+        // recovery wizard and a fully open vault on screen at the same time - and, on the
+        // words screen, to walk away from a stick whose only phrase had just been shown.
+        RecoveryLink.Visibility = panel == WordsPanel || panel == PinSetupPanel || panel == BusyPanel
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 
     private void SetStatus(string state, Mood mood, string detail = "")

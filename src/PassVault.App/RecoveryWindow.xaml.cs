@@ -50,11 +50,16 @@ public partial class RecoveryWindow : Window
             SourceDetail.Text = Describe(found.Vault);
             SourceNext.IsEnabled = true;
         }
-        catch (UnlockException ex)
+        catch (Exception ex)
         {
+            // Catching only UnlockException left InvalidDataException and JsonException to
+            // escape, and with no handler anywhere the process simply disappeared - on the
+            // one screen a user reaches because something has already gone wrong.
             _vault = null;
             SourceText.Text = "Nothing found";
-            SourceDetail.Text = ex.Message;
+            SourceDetail.Text = ex is UnlockException
+                ? ex.Message
+                : "The vault files this PC can see are damaged. Use a backup file instead.";
             SourceNext.IsEnabled = false;
         }
 
@@ -65,6 +70,25 @@ public partial class RecoveryWindow : Window
     {
         var header = PassVault.Core.Vault.VaultFile.ReadHeader(vault);
         return $"epoch {header.Epoch}, save {header.Revision}";
+    }
+
+    /// <summary>
+    /// How new the newest vault this PC can see is. Used to warn when a backup file is
+    /// older than what is already on the stick.
+    /// </summary>
+    private (int Epoch, long Revision)? Newest()
+    {
+        try
+        {
+            var stick = UsbDetect.Find().FirstOrDefault(s => s.IsSetUp);
+            var found = Recovery.FindVault(_folder, stick?.Root);
+            var header = PassVault.Core.Vault.VaultFile.ReadHeader(found.Vault);
+            return (header.Epoch, header.Revision);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private void OnPickBackupFile(object sender, RoutedEventArgs e)
@@ -79,17 +103,29 @@ public partial class RecoveryWindow : Window
         try
         {
             var bytes = File.ReadAllBytes(picker.FileName);
-            PassVault.Core.Vault.VaultFile.ReadHeader(bytes);   // is it really one of ours
+            var header = PassVault.Core.Vault.VaultFile.ReadHeader(bytes);   // really one of ours?
 
             _vault = bytes;
             SourceText.Text = picker.FileName;
             SourceDetail.Text = Describe(bytes);
             SourceNext.IsEnabled = true;
             Say("");
+
+            // "It picks whichever is newest" only ever applied to stick-versus-spare-copy.
+            // A file picked by hand skipped the comparison entirely, so recovering from an
+            // old backup quietly wiped everything saved since - on the stick AND on this PC.
+            var newest = Newest();
+            if (newest is { } n && (header.Epoch < n.Epoch
+                                    || (header.Epoch == n.Epoch && header.Revision < n.Revision)))
+            {
+                Say($"Careful: this backup is older (epoch {header.Epoch}, save {header.Revision}) than the "
+                    + $"vault this PC can already see (epoch {n.Epoch}, save {n.Revision}). Going on with it "
+                    + "will lose everything saved since this backup was made.");
+            }
         }
-        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Say("That file is not a PassVault backup.");
+            Say("That file is not a PassVault backup, or it is damaged.");
         }
     }
 
@@ -168,31 +204,51 @@ public partial class RecoveryWindow : Window
         Show(BusyPanel);
         Say("");
 
+        var vault = _vault;
+        var oldPhrase = _oldPhrase;
+        var target = _targetStick;
+
+        // Step one: re-key the stick. After this the old phrase is dead and the new one is
+        // the only way in, so it has to reach the screen whatever happens next.
+        string newPhrase;
+        List<Entry> toChange;
         try
         {
-            var vault = _vault;
-            var oldPhrase = _oldPhrase;
-            var target = _targetStick;
-
-            var result = await Task.Run(() =>
-            {
-                var (fresh, newPhrase, toChange) = Recovery.ReplaceStick(vault, oldPhrase, target);
-
-                var (deviceSecret, protection) = DeviceSecret.Load(_folder);
-                Enrolment.Enrol(_folder, target, newPhrase, pin, deviceSecret, protection);
-
-                return (newPhrase, toChange);
-            });
-
-            _newPhrase = result.newPhrase;
-            _oldPhrase = "";
-            ShowDone(result.toChange);
+            (_, newPhrase, toChange) = await Task.Run(() => Recovery.ReplaceStick(vault, oldPhrase, target));
         }
         catch (Exception ex)
         {
             Say(ex.Message);
             Show(PinPanel);
+            return;
         }
+
+        _newPhrase = newPhrase;
+        _oldPhrase = "";
+
+        // Step two: set this PC up with a PIN. If this fails the stick is still fine - it
+        // just needs the new words typed in once. Rolling back to the PIN screen here was
+        // what destroyed the only phrase for a stick that had already been rewritten.
+        string? enrolProblem = null;
+        try
+        {
+            await Task.Run(() =>
+            {
+                var (deviceSecret, protection) = DeviceSecret.Load(_folder);
+                Enrolment.Enrol(_folder, target, newPhrase, pin, deviceSecret, protection);
+            });
+        }
+        catch (Exception ex)
+        {
+            enrolProblem = ex.Message;
+        }
+
+        ShowDone(toChange);
+
+        if (enrolProblem is not null)
+            Say($"Your new stick is ready and the words below are the only way into it - write them "
+                + $"down now. Setting a PIN on this PC did not work ({enrolProblem}), so open the vault "
+                + "with the 12 words and choose a PIN then.");
     }
 
     // ---- 5. done ----
@@ -207,8 +263,14 @@ public partial class RecoveryWindow : Window
 
         ChangeList.ItemsSource = toChange;
         Show(DonePanel);
-        FinishButton.Visibility = Visibility.Visible;
+
+        NewWordsWritten.IsChecked = false;
+        FinishButton.IsEnabled = false;
+        FinishRow.Visibility = Visibility.Visible;
     }
+
+    private void OnNewWordsWrittenChanged(object sender, RoutedEventArgs e)
+        => FinishButton.IsEnabled = NewWordsWritten.IsChecked == true;
 
     private void OnFinish(object sender, RoutedEventArgs e)
     {

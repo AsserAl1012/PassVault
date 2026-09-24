@@ -149,8 +149,18 @@
         <Grid Grid.Row="2" Margin="0,14,0,0">
             <TextBlock x:Name="Message" TextWrapping="Wrap" FontSize="12"
                        Foreground="{StaticResource Danger}" MinHeight="32" VerticalAlignment="Center"/>
-            <Button x:Name="FinishButton" Style="{StaticResource Primary}" Content="Open my vault"
-                    HorizontalAlignment="Right" Visibility="Collapsed" Click="OnFinish"/>
+            <StackPanel x:Name="FinishRow" Orientation="Horizontal" HorizontalAlignment="Right"
+                        Visibility="Collapsed">
+                <!-- Same gate as first-run setup. These words are the ONLY way into the
+                     re-keyed stick and the old ones are already dead, so one stray click
+                     on "Open my vault" used to end the vault. -->
+                <CheckBox x:Name="NewWordsWritten" Foreground="{StaticResource Muted}"
+                          VerticalAlignment="Center" Margin="0,0,14,0"
+                          Content="I have written the new words down"
+                          Checked="OnNewWordsWrittenChanged" Unchecked="OnNewWordsWrittenChanged"/>
+                <Button x:Name="FinishButton" Style="{StaticResource Primary}" Content="Open my vault"
+                        IsEnabled="False" Click="OnFinish"/>
+            </StackPanel>
         </Grid>
     </Grid>
 </Window>
