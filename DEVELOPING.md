@@ -34,7 +34,7 @@ dotnet run --project src/PassVault.App
 dotnet test
 ```
 
-138 tests, about 30 seconds. Most of that is Argon2 doing real work on purpose.
+203 tests, about 40 seconds. Most of that is Argon2 doing real work on purpose.
 
 ### Build everything
 
@@ -235,7 +235,7 @@ src/PassVault.Core/       all the logic, no screens
   Licensing/              the offline licence check
 src/PassVault.App/        the Windows app
 src/PassVault.Cli/        the console tool
-src/PassVault.Tests/      138 tests
+src/PassVault.Tests/      203 tests
 src/PassVault.Sync/       the LAN reachability probe (step 7, unfinished)
 
 ios/                      the iPhone app - never compiled, needs a Mac

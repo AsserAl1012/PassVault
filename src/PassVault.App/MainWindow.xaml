@@ -51,6 +51,7 @@
                      which is what owning something ought to feel like. -->
                 <Button x:Name="LicenceButton" Style="{StaticResource Quiet}" Content="Free version"
                         Margin="0,0,4,0" Click="OnLicence"/>
+                <Button Content="Import" Margin="0,0,8,0" Click="OnImport"/>
                 <Button Content="Back up" Margin="0,0,8,0" Click="OnBackup"/>
                 <Button Content="Lock" Click="OnLock"/>
             </StackPanel>

@@ -23,6 +23,7 @@ src/PassVault.Core/        all the logic, no screens
   Crypto/Mnemonic.cs       the 12-word phrase
   Crypto/KeyWrap.cs        locking the master key away, one way in per slot
   Model/Entry.cs           one saved credential
+  Import/CsvImport.cs      reading exports from browsers and other password managers
   Vault/VaultFile.cs       reading and writing vault.pv
   Machine/DeviceSecret.cs  this PC's 32-byte secret, sealed in the TPM
   Machine/MachineFile.cs   machine.pvm - what this one PC knows
@@ -99,3 +100,6 @@ PC — you type the 12 words once and choose a PIN.
 - lock on demand, and lock itself after 5 minutes idle
 - replace a lost, stolen or broken stick: new keys, new words, old stick dead
 - save a backup file that plus your 12 words gets everything back
+- make a strong password with one button
+- keep its windows out of screenshots, recordings and screen sharing
+- import from 14 browsers and password managers, keeping 2FA secrets and leaving cards behind

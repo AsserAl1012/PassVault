@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using PassVault.Core.Crypto;
+using PassVault.Core.Import;
 using PassVault.Core.Licensing;
 using PassVault.Core.Machine;
 using PassVault.Core.Model;
@@ -673,6 +674,71 @@ public partial class MainWindow : Window
         }
 
         Toast($"{what} copied - the clipboard clears in {ClipboardGuard.ClearAfter.TotalSeconds:0} seconds");
+    }
+
+    // ---- importing ----
+
+    /// <summary>
+    /// Bring in a CSV exported from a browser or another password manager. Everything goes in
+    /// with one save, or none of it does - a half-finished import would be worse than none.
+    /// </summary>
+    private void OnImport(object sender, RoutedEventArgs e)
+    {
+        var picker = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Pick the file you exported from your browser or old password manager",
+            Filter = "Password export (*.csv)|*.csv|All files (*.*)|*.*",
+        };
+        if (WhileDialogIsUp(() => picker.ShowDialog()) != true) return;
+
+        ImportFile found;
+        try
+        {
+            found = CsvImport.Read(File.ReadAllText(picker.FileName));
+        }
+        catch (InvalidDataException ex)
+        {
+            Toast(ex.Message, good: false);
+            return;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Toast($"Could not read that file - {Plain(ex)}", good: false);
+            return;
+        }
+
+        var fresh = CsvImport.NotAlreadyIn(found.Entries, _all);
+        var look = new ImportWindow(Path.GetFileName(picker.FileName), found.Entries.Count, found.LeftOut, fresh) { Owner = this };
+        if (WhileDialogIsUp(() => look.ShowDialog()) != true) return;
+
+        _all.AddRange(fresh);
+        if (!Persist())
+        {
+            _all.RemoveAll(fresh.Contains);   // Persist has already said why
+            return;
+        }
+
+        ApplyFilter();
+        ShowStatus();
+
+        var imported = $"Imported {fresh.Count} credential{(fresh.Count == 1 ? "" : "s")}";
+        if (!look.DeleteFileAfter)
+        {
+            Toast($"{imported}. Delete the export file when you can - it holds every password in plain text");
+            return;
+        }
+
+        // Only once the import is safely saved, so a failed save never costs the file too.
+        try
+        {
+            File.Delete(picker.FileName);
+            Toast($"{imported} and deleted the export file");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Toast($"{imported}, but could not delete the export file - {Plain(ex)}. "
+                  + "Delete it yourself: it holds every password in plain text.", good: false);
+        }
     }
 
     // ---- backing up ----

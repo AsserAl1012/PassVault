@@ -156,6 +156,40 @@ letter instead, so every entry still has its own mark.
 
 Press **Save**.
 
+### Bringing them in from a browser or another password manager
+
+1. In your browser or old password manager, **export your passwords as a CSV file** — the table
+   below says where.
+2. In PassVault, press **Import** and pick that file.
+3. Look over the names it found, leave **Delete … afterwards** ticked, and press **Import**.
+
+Good to know:
+
+- Nothing goes in until you press Import, and then it all goes in with one save.
+- Anything already in your vault is skipped, so importing the same file twice is harmless.
+- PassVault holds logins and notes. Cards, identities and folders stay behind — the window
+  tells you how many.
+- Nothing from a login is lost. The website address goes at the top of the notes. Two-factor
+  secrets, extra usernames and custom fields go at the bottom.
+- **The export file holds every password in plain text.** Leave the box ticked and PassVault
+  deletes it once everything is safely saved. It does not go to the Recycle Bin.
+- Keep your old password manager until you have tried a few of your logins from PassVault.
+
+| From | Where the export is |
+|---|---|
+| Chrome, Brave, Opera | Menu → Passwords and autofill → Google Password Manager → Settings → **Export passwords** |
+| Edge | Menu → Passwords → **…** → **Export passwords** |
+| Firefox | Menu → Passwords → **…** → **Export Passwords** |
+| Safari / Apple Passwords (Mac) | Passwords app → File → **Export All Passwords to File** |
+| Bitwarden | Web vault → Tools → **Export** → .csv |
+| LastPass | Browser extension → Account → Fix a problem yourself → Export vault items → **Export data for use anywhere** |
+| 1Password | **…** at the top of the sidebar → **Export** → CSV |
+| KeePassXC | Database → Export → **CSV File** |
+| KeePass 2 | File → Export → **KeePass CSV (1.x)** |
+| Proton Pass | Settings → Export → **CSV** |
+| Dashlane | Settings → Export data → **Export to CSV**. You get a ZIP — open it and pick `credentials.csv` |
+| NordPass | Settings → Import and Export → **Export items** |
+
 ### Finding one
 
 Type in the search box. It matches the site name, the username, the email **and** the notes —
@@ -331,10 +365,11 @@ Press the button in the top bar — it says **Free version** until you own a cop
 name.
 
 **The free version is complete and safe.** Unlimited credentials, the full encryption, your
-12 words, backups, re-keying — none of that ever costs money.
+12 words, backups, re-keying, importing from other password managers — none of that ever
+costs money.
 
-Buying adds convenience: importing from other password managers, more than one vault, the
-browser extension and sync when they exist.
+Buying adds convenience as it is built: auto-type, more than one vault, the browser extension
+and sync.
 
 Your licence never expires, has no account, and is checked on your own machine. Nothing can
 switch it off. See [LICENCE.md](LICENCE.md) — including the promise that if this project is
