@@ -62,6 +62,7 @@ Specifically, these are never behind a payment, in any version, ever:
 - Your 12-word recovery phrase
 - Backing up your vault
 - Re-keying after a stick is lost or stolen
+- Importing from other password managers and browsers
 - Getting your data back out
 
 Paying is for things that save you **time**. It is never for things that keep you **safe**.
@@ -76,11 +77,15 @@ count down at you, and never make itself worse to push you into paying.
 
 Convenience, and supporting the work:
 
-- Importing from 1Password, Bitwarden, LastPass, Chrome and CSV
-- More than one vault, so work and personal stay apart
+- Your name in the app, because you own it
+- Auto-type, when it exists - one key types your login into any window
+- More than one vault, so work and personal stay apart, when it exists
 - The browser extension, when it exists
 - Sync between your devices, when it exists
-- Your name in the app, because you own it
+
+Importing used to be on this list. It moved to the free list before anyone paid for it:
+getting your passwords *in* is how you switch to PassVault, and charging for the way in is
+the wrong way round.
 
 ---
 

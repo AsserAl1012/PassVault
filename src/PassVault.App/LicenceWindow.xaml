@@ -47,11 +47,11 @@
                     <StackPanel>
                         <TextBlock Text="Free, always" Style="{StaticResource Label}"/>
                         <TextBlock Style="{StaticResource Sub}" FontSize="12" TextWrapping="Wrap"
-                                   Text="As many credentials as you like &#183; the full strength of the encryption &#183; your 12-word recovery phrase &#183; backups &#183; re-keying after a theft &#183; getting your data back out"/>
+                                   Text="As many credentials as you like &#183; the full strength of the encryption &#183; your 12-word recovery phrase &#183; backups &#183; re-keying after a theft &#183; importing from other password managers &#183; getting your data back out"/>
 
                         <TextBlock Text="What buying adds" Style="{StaticResource Label}" Margin="0,16,0,6"/>
                         <TextBlock Style="{StaticResource Sub}" FontSize="12" TextWrapping="Wrap"
-                                   Text="Importing from other password managers &#183; more than one vault &#183; the browser extension and sync, when they exist &#183; your name in the app"/>
+                                   Text="Your name in the app &#183; and, as they are built: auto-type, more than one vault, the browser extension and sync"/>
                     </StackPanel>
                 </Border>
 
