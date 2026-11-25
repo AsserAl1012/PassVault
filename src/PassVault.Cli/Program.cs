@@ -7,6 +7,7 @@ using PassVault.Core.Vault;
 
 try
 {
+    MachineStore.MoveFromOldPlace();
     return (args.Length == 0 ? "help" : args[0].ToLowerInvariant()) switch
     {
         "find" => Find(),
@@ -24,7 +25,8 @@ catch (UnlockException ex)
     Console.WriteLine($"\n{ex.Message}");
     return 1;
 }
-catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException or InvalidDataException or ArgumentException)
+catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException or InvalidDataException or ArgumentException
+                               or System.Security.Cryptography.CryptographicException or PinRefusedException)
 {
     Console.WriteLine($"\n{ex.Message}");
     return 1;
@@ -111,8 +113,8 @@ static int Enrol(string root)
 
     var pin = NewPin();
 
-    var (deviceSecret, protection) = DeviceSecret.Load(folder);
-    var (machine, _) = Enrolment.Enrol(folder, root, phrase, pin, deviceSecret, protection);
+    var device = DeviceSecret.Create(pin);
+    var (machine, _) = Enrolment.Enrol(folder, root, phrase, pin, device.Secret, device.Protection, device.Sealed);
 
     Console.WriteLine($"\nThis PC is set up. From now on: stick in, PIN, done.");
     Console.WriteLine($"  machine secret   {Describe(machine.Protection)}");
@@ -275,9 +277,9 @@ static (byte[] Vault, byte[] MasterKey) Open(string root)
             Thread.Sleep(wait);
         }
 
-        var (deviceSecret, _) = DeviceSecret.Load(folder);
         var pin = AskPin("PIN");
-        var (masterKey, _) = Enrolment.UnlockWithPin(folder, root, pin, deviceSecret);
+        var (masterKey, _) = Enrolment.UnlockWithPin(folder, root, pin, typed => DeviceSecret.Open(folder, typed).Secret);
+        DeviceSecret.UpgradeIfOld(folder, pin);
         return (VaultStorage.ReadVault(root), masterKey);
     }
 
@@ -306,7 +308,7 @@ static string NewPin()
 {
     while (true)
     {
-        var first = AskPin("Choose a 4-digit PIN");
+        var first = AskPin("Choose a PIN, 4 to 12 digits");
         var again = AskPin("Type it again");
         if (first == again) return first;
         Console.WriteLine("  Those did not match. Try again.");
@@ -319,15 +321,15 @@ static string AskPin(string label)
     {
         Console.Write($"{label}: ");
         var pin = ReadHidden();
-        if (pin.Length == 4 && pin.All(char.IsAsciiDigit)) return pin;
-        Console.WriteLine("  A PIN is exactly 4 digits.");
+        if (Enrolment.IsPin(pin)) return pin;
+        Console.WriteLine("  A PIN is 4 to 12 digits, 0 to 9.");
     }
 }
 
 // Hide the PIN as it is typed, unless input is being piped in (a script or a test).
 static string ReadHidden()
 {
-    if (Console.IsInputRedirected) return Console.ReadLine() ?? "";
+    if (Console.IsInputRedirected) return ReadLineOrStop();
 
     var typed = "";
     while (true)
@@ -354,10 +356,14 @@ static string Required(string label)
     while (true)
     {
         Console.Write($"  {label}: ");
-        var value = Console.ReadLine();
+        var value = ReadLineOrStop();
         if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
     }
 }
+
+// Piped input can run out. Asking again then looped for ever, printing the question until the disk filled.
+static string ReadLineOrStop()
+    => Console.ReadLine() ?? throw new InvalidOperationException("The input ended before everything was answered.");
 
 static string? Optional(string label)
 {

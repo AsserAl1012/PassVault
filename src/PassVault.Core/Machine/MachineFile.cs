@@ -43,6 +43,20 @@ public sealed class MachineFile
     public long HighestRevisionSeen { get; set; } = 1;
 
     public DeviceProtection Protection { get; set; }
+
+    /// <summary>
+    /// So the unlock screen can open the moment the last digit lands, as it always has. Files
+    /// from before longer PINs have no value here, and those PINs are all 4 digits.
+    /// </summary>
+    public int PinLength { get; set; } = 4;
+
+    /// <summary>
+    /// This PC's secret, sealed - see DeviceSecret. Kept in this file, not one of its own, so the
+    /// PIN slot and the secret it needs are always written together. As two files, a crash between
+    /// the two writes could leave them from two different set-ups, and then no PIN ever opened.
+    /// Set-ups from before 1.0.2 have it in device.bin until their first unlock moves it here.
+    /// </summary>
+    public byte[]? Device { get; set; }
 }
 
 public static class MachineStore
@@ -59,11 +73,50 @@ public static class MachineStore
     };
 
     /// <summary>
-    /// Local app data, not roaming - this must not follow the user onto another machine,
-    /// because the whole point is that it belongs to this one.
+    /// C:\Users\you\PassVault. Not AppData: the Microsoft Store version of an app has everything it
+    /// creates in AppData redirected into a private folder that is deleted on uninstall - and the
+    /// spare copy of the vault is exactly what must survive that. Not Documents either: Windows 11
+    /// backs Documents up to OneDrive by default. Not roaming, because this belongs to one PC.
     /// </summary>
-    public static string DefaultFolder =>
+    public static string DefaultFolder => FolderToUse(HomeFolder, OldDefaultFolder);
+
+    private static string HomeFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "PassVault");
+
+    /// <summary>Where versions before 1.0.2 kept it.</summary>
+    public static string OldDefaultFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PassVault");
+
+    /// <summary>
+    /// The new place - unless this PC is still set up in the old one and not in the new: the move
+    /// failed because a file was open, or a folder of that name was already there. Asking for the
+    /// 12 words then set the PC up a second time, and left the first set-up, the spare copy and
+    /// the licence where nothing looks.
+    /// </summary>
+    public static string FolderToUse(string home, string old)
+        => !IsEnrolled(home) && IsEnrolled(old) ? old : home;
+
+    /// <summary>
+    /// Move the folder from where older versions kept it, once. Only when there is nothing at
+    /// the new place yet - two folders are never merged, because picking wrongly between two
+    /// spare copies is worse than leaving the old one where it is.
+    /// </summary>
+    public static void MoveFromOldPlace(string? oldFolder = null, string? newFolder = null)
+    {
+        oldFolder ??= OldDefaultFolder;
+        newFolder ??= HomeFolder;
+        if (!Directory.Exists(oldFolder) || Directory.Exists(newFolder)) return;
+
+        try
+        {
+            Directory.Move(oldFolder, newFolder);   // same drive, so a rename: all or nothing
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Something had a file open. Nothing moved; the next start tries again, and until
+            // then FolderToUse keeps using the old folder. Starting up matters more than moving today.
+        }
+    }
 
     public static string PathIn(string folder) => Path.Combine(folder, FileName);
     public static string MirrorVaultPathIn(string folder) => Path.Combine(folder, MirrorVaultName);

@@ -23,7 +23,9 @@ public static class KeyWrap
 {
     public const string RecoverySlot = "recovery";
     public const string PinSlot = "pin";
-    public const int PinLength = 4;
+    /// <summary>A PIN is 4 to 12 digits. The one check lives here, where the PIN becomes key material.</summary>
+    public const int MinPinLength = 4;
+    public const int MaxPinLength = 12;
     public const int SecretSize = 32;
 
     // ---- recovery phrase ----
@@ -93,9 +95,11 @@ public static class KeyWrap
     }
 
     /// <summary>
-    /// The 68 bytes fed to Argon2id: usbSecret(32) || deviceSecret(32) || PIN as 4 ASCII digits.
-    /// Plain concatenation of fixed-length parts, because Argon2's own "secret" parameter
-    /// does not exist in libsodium on iOS.
+    /// The bytes fed to Argon2id: usbSecret(32) || deviceSecret(32) || PIN as 4 to 12 ASCII digits.
+    /// Plain concatenation, because Argon2's own "secret" parameter does not exist in libsodium on
+    /// iOS. It still reads back only one way: both secrets are always exactly 32 bytes, so the PIN
+    /// is simply everything after them. A 4-digit PIN gives exactly the 68 bytes it always did,
+    /// so every existing PIN slot, and the test vectors shared with the Swift code, are unchanged.
     /// </summary>
     public static byte[] PinInput(byte[] usbSecret, byte[] deviceSecret, string pin)
     {
@@ -103,10 +107,10 @@ public static class KeyWrap
             throw new ArgumentException($"USB secret must be {SecretSize} bytes.", nameof(usbSecret));
         if (deviceSecret.Length != SecretSize)
             throw new ArgumentException($"Device secret must be {SecretSize} bytes.", nameof(deviceSecret));
-        if (pin.Length != PinLength || !pin.All(char.IsAsciiDigit))
-            throw new ArgumentException($"The PIN must be {PinLength} digits.", nameof(pin));
+        if (pin.Length is < MinPinLength or > MaxPinLength || !pin.All(char.IsAsciiDigit))
+            throw new ArgumentException($"The PIN must be {MinPinLength} to {MaxPinLength} digits.", nameof(pin));
 
-        var input = new byte[SecretSize * 2 + PinLength];
+        var input = new byte[SecretSize * 2 + pin.Length];
         usbSecret.CopyTo(input, 0);
         deviceSecret.CopyTo(input, SecretSize);
         Encoding.ASCII.GetBytes(pin).CopyTo(input, SecretSize * 2);

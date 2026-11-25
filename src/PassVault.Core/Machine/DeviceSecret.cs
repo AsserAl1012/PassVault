@@ -1,179 +1,370 @@
+using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace PassVault.Core.Machine;
 
 /// <summary>How the device secret is protected. Worth telling the user honestly.</summary>
 public enum DeviceProtection
 {
-    /// <summary>Sealed by the TPM chip. The secret cannot leave this physical machine.</summary>
+    /// <summary>Sealed by the TPM chip, which also checks the PIN. The secret cannot leave this machine.</summary>
     Tpm,
 
     /// <summary>
     /// Fallback when there is no usable TPM. Tied to this Windows account rather than the
     /// hardware, so someone who can log in as you - or who has your Windows password and
-    /// your disk - can get it back. Weaker, and the app says so.
+    /// your disk - can get it back, and nothing but the app limits PIN guesses. Weaker, and
+    /// the app says so.
     /// </summary>
     Dpapi,
 }
 
 /// <summary>
+/// The TPM chip refused the PIN. It counts every refusal itself, so this is the limit on
+/// guessing that no one can get round by copying files or skipping the app.
+/// </summary>
+public sealed class PinRefusedException(bool lockedOut) : Exception(lockedOut
+    ? "This PC's chip is not taking PINs just now - it may be resting after too many wrong ones. "
+      + "Try again later, or open your vault with your 12 words."
+    : "The PIN is wrong.")
+{
+    /// <summary>
+    /// True when the chip would not check the PIN at all just now - resting after too many wrong
+    /// ones, or busy. Nothing was learned about the PIN.
+    /// </summary>
+    public bool LockedOut { get; } = lockedOut;
+}
+
+/// <summary>
 /// A 32-byte secret that belongs to this machine and nowhere else. It is the second of the
-/// three ingredients in the daily unlock, and it is what stops a stolen laptop bag - stick
-/// and PC together - from being just 10,000 PIN guesses.
+/// three ingredients in the daily unlock.
 ///
-/// The secret itself is stored encrypted. On a TPM machine the key that decrypts it lives
-/// inside the chip and cannot be exported, so copying the folder or imaging the disk gets
-/// an attacker nothing.
+/// On a TPM machine it is sealed with a key that lives in the chip, and the chip will only use
+/// that key when given the PIN. The chip counts wrong PINs itself - 32, then one more every two
+/// hours on a normal Windows PC - so someone holding the PC and the stick together cannot just
+/// try all the PINs. Before this, the chip opened the secret without asking and only the app
+/// counted wrong PINs, so skipping the app made a 4-digit PIN a few hours' work.
+///
+/// The sealed secret is kept in machine.pvm, with the chip's key inside it, wrapped so only this
+/// PC's chip can load it. Windows would otherwise keep the key as a file in AppData, which the
+/// Microsoft Store version redirects and deletes on uninstall.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class DeviceSecret
 {
     public const int Size = 32;
-    public const string FileName = "device.bin";
-    public const string TpmKeyName = "PassVault.DeviceKey";
 
-    private static readonly byte[] Magic = "PVDS"u8.ToArray();
-    private static readonly CngProvider TpmProvider = new("Microsoft Platform Crypto Provider");
+    /// <summary>Where set-ups from before 1.0.2 keep the sealed secret, until their first unlock moves it into machine.pvm.</summary>
+    public const string FileName = "device.bin";
 
     /// <summary>
-    /// Load this machine's secret, creating it the first time. The TPM is used when it is
-    /// there; otherwise we fall back and report that we did.
+    /// Where version 1 kept its key: a named chip key that never asked for the PIN. Still read,
+    /// so existing set-ups keep working, and replaced the first time the PIN is proven right.
     /// </summary>
-    public static (byte[] Secret, DeviceProtection Protection) Load(string folder, string tpmKeyName = TpmKeyName)
+    public const string LegacyTpmKeyName = "PassVault.DeviceKey";
+
+    private const string TpmProviderName = "Microsoft Platform Crypto Provider";
+    private static readonly CngProvider TpmProvider = new(TpmProviderName);
+    private static readonly CngKeyBlobFormat ChipWrapped = new("OpaqueKeyBlob");
+
+    // ---- file format: "PVDS" || kind(1) || payload ----
+    private static readonly byte[] Magic = "PVDS"u8.ToArray();
+    private const byte LegacyTpm = 0;    // payload: the secret sealed with the named key
+    private const byte Dpapi = 1;        // payload: the secret sealed by Windows for this account
+    private const byte TpmWithPin = 2;   // payload: keyLength(2) || chip-wrapped key || sealed secret
+
+    // Checked on a real chip: a wrong PIN comes back as NTE_PERM, and the chip counts it.
+    private const int NtePerm = unchecked((int)0x80090010);
+
+    /// <summary>A freshly made secret, and the same secret sealed - which set-up keeps in machine.pvm.</summary>
+    public sealed record Made(byte[] Secret, DeviceProtection Protection, byte[] Sealed);
+
+    /// <summary>A new secret for setting this machine up, sealed so the chip will only open it with this PIN.</summary>
+    public static Made Create(string pin) => Seal(RandomNumberGenerator.GetBytes(Size), pin);
+
+    /// <summary>This PC's sealed secret: in machine.pvm, or in device.bin for a set-up from before 1.0.2.</summary>
+    public static byte[] SealedIn(string folder)
     {
+        if (MachineStore.IsEnrolled(folder) && MachineStore.Read(folder).Device is { } sealedSecret)
+            return sealedSecret;
+
         var path = Path.Combine(folder, FileName);
-        if (File.Exists(path)) return Open(File.ReadAllBytes(path), tpmKeyName);
-
-        Directory.CreateDirectory(folder);
-        var secret = RandomNumberGenerator.GetBytes(Size);
-        var protection = TpmIsUsable() ? DeviceProtection.Tpm : DeviceProtection.Dpapi;
-
-        File.WriteAllBytes(path, Seal(secret, protection, tpmKeyName));
-        return (secret, protection);
+        if (!File.Exists(path))
+            throw new InvalidOperationException(
+                "This machine's own secret is missing. Set this machine up again with your 12 words.");
+        return File.ReadAllBytes(path);
     }
 
     /// <summary>
-    /// <see cref="Load"/> for the moment this machine is being set up: a secret that can no longer
-    /// be opened - the chip was cleared, the board replaced, Windows reinstalled over a kept profile -
-    /// is replaced instead of failing the set-up too. That is safe only here: setting up writes a
-    /// new PIN slot, and the old secret opened nothing else. Load alone kept throwing, so the one
-    /// fix the error message offered could never work.
+    /// Open this machine's secret. On a TPM machine the chip checks the PIN and throws
+    /// <see cref="PinRefusedException"/> if it is wrong or if it will not check just now. Anything
+    /// else thrown means the secret cannot be opened on this PC any more: the chip was cleared,
+    /// the board replaced, or the file damaged.
     /// </summary>
-    public static (byte[] Secret, DeviceProtection Protection) LoadForSetUp(string folder, string tpmKeyName = TpmKeyName)
+    public static (byte[] Secret, DeviceProtection Protection) Open(string folder, string pin)
+        => Open(SealedIn(folder), pin);
+
+    public static (byte[] Secret, DeviceProtection Protection) Open(byte[] sealedSecret, string pin)
+    {
+        var (kind, payload) = Unpack(sealedSecret);
+        return kind switch
+        {
+            TpmWithPin => (OpenWithPin(payload, pin), DeviceProtection.Tpm),
+            LegacyTpm => (OpenLegacy(payload), DeviceProtection.Tpm),
+            Dpapi => (ProtectedData.Unprotect(payload, null, DataProtectionScope.CurrentUser), DeviceProtection.Dpapi),
+            _ => throw new InvalidDataException("This machine's own secret uses a protection we do not know."),
+        };
+    }
+
+    /// <summary>
+    /// Bring a set-up from before 1.0.2 up to date: its secret moves into machine.pvm and, where
+    /// this PC has a chip, is sealed again so the chip checks the PIN. That covers a secret the
+    /// chip opened without asking, and one Windows sealed because 1.0.1 failed to use the chip.
+    /// The secret stays the same, so nothing else has to change.
+    ///
+    /// Only call this after the PIN has been proven right by opening the vault: sealing a mistyped
+    /// PIN in would lock the owner out. It never stops the vault opening - whatever fails here is
+    /// tried again on the next unlock.
+    /// </summary>
+    public static void UpgradeIfOld(string folder, string provenPin)
     {
         try
         {
-            return Load(folder, tpmKeyName);
+            var machine = MachineStore.Read(folder);
+
+            if (machine.Device is null)
+            {
+                var sealedSecret = SealedIn(folder);
+
+                // Never weaker: with no chip to use, the old protection just moves across as it is.
+                if (Unpack(sealedSecret).Kind != TpmWithPin && TpmIsUsable())
+                {
+                    var made = Seal(Open(sealedSecret, provenPin).Secret, provenPin);
+                    (sealedSecret, machine.Protection) = (made.Sealed, made.Protection);
+                }
+
+                machine.Device = sealedSecret;
+                MachineStore.Write(folder, machine);
+            }
+
+            // Only now that machine.pvm holds it: until then device.bin was the only copy.
+            var oldFile = Path.Combine(folder, FileName);
+            if (File.Exists(oldFile)) File.Delete(oldFile);
+
+            // While the key that opened without a PIN exists, any old device.bin still opens without
+            // one - left in the old AppData folder, or in a backup - and PINs can be tried against its
+            // machine.pvm with no chip counting. Once the chip checks the PIN here, nothing needs it.
+            if (Unpack(machine.Device).Kind == TpmWithPin) ForgetLegacyKey();
         }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or CryptographicException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException
+                                       or PinRefusedException or InvalidOperationException or InvalidDataException)
         {
-            Forget(folder, tpmKeyName);
-            return Load(folder, tpmKeyName);
+            // Tried again on the next unlock.
         }
     }
 
-    public static bool Exists(string folder) => File.Exists(Path.Combine(folder, FileName));
-
     /// <summary>
-    /// Throw the secret away. The vault is untouched - but every machine file that relied on
-    /// this secret is now dead and needs setting up again with the 12 words.
+    /// Throw away a set-up's device.bin from before 1.0.2 and its chip key. Since 1.0.2 the secret
+    /// is in machine.pvm and goes with it.
     /// </summary>
-    public static void Forget(string folder, string tpmKeyName = TpmKeyName)
+    public static void Forget(string folder)
     {
         var path = Path.Combine(folder, FileName);
         if (File.Exists(path)) File.Delete(path);
-
-        if (CngKey.Exists(tpmKeyName, TpmProvider))
-            CngKey.Open(tpmKeyName, TpmProvider).Delete();
+        ForgetLegacyKey();
     }
 
+    /// <summary>
+    /// Whether this PC has a TPM 2.0 chip, asked of Windows' own TPM service. Instant - it makes
+    /// no key. It used to make and throw away a key to find out, which took seconds on a firmware
+    /// TPM and, when that broke, reported "no chip" on a PC that had one.
+    /// </summary>
     public static bool TpmIsUsable()
     {
         try
         {
-            using var key = OpenOrCreateTpmKey(TpmKeyName + ".probe");
+            return Tbsi_GetDeviceInfo(Marshal.SizeOf<TpmDeviceInfo>(), out var info) == 0 && info.TpmVersion == TpmVersion20;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    // ---- sealing ----
+
+    /// <summary>
+    /// Seal with the chip when this PC has one, proving the round trip with the PIN before
+    /// trusting it. Windows' own protection is only for a PC with no usable chip at all.
+    ///
+    /// A PC that has a chip never falls back. It used to, on any error - so a failure while
+    /// upgrading quietly swapped the chip-checked PIN for Windows' own protection, the weakest
+    /// thing on offer, and said nothing. A failure here is an error to show, not a reason to
+    /// seal with something weaker.
+    /// </summary>
+    private static Made Seal(byte[] secret, string pin)
+    {
+        if (!TpmIsUsable())
+            return new Made(secret, DeviceProtection.Dpapi,
+                            Pack(Dpapi, ProtectedData.Protect(secret, null, DataProtectionScope.CurrentUser)));
+
+        var (sealedSecret, wrappedKey) = WithTemporaryTpmKey(pin, key =>
+        {
             using var rsa = new RSACng(key);
-            var check = RandomNumberGenerator.GetBytes(16);
-            var back = rsa.Decrypt(rsa.Encrypt(check, RSAEncryptionPadding.OaepSHA256), RSAEncryptionPadding.OaepSHA256);
-            key.Delete();
-            return check.AsSpan().SequenceEqual(back);
-        }
-        catch (CryptographicException)
-        {
-            return false;
-        }
-        catch (PlatformNotSupportedException)
-        {
-            return false;
-        }
+            return (rsa.Encrypt(secret, RSAEncryptionPadding.OaepSHA256), key.Export(ChipWrapped));
+        });
+
+        var payload = new byte[2 + wrappedKey.Length + sealedSecret.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(payload, (ushort)wrappedKey.Length);
+        wrappedKey.CopyTo(payload, 2);
+        sealedSecret.CopyTo(payload, 2 + wrappedKey.Length);
+
+        if (!OpenWithPin(payload, pin).AsSpan().SequenceEqual(secret))
+            throw new CryptographicException("The chip did not give the secret back.");
+
+        return new Made(secret, DeviceProtection.Tpm, Pack(TpmWithPin, payload));
     }
 
-    // ---- file format: "PVDS" || protection(1) || sealed bytes ----
-
-    private static byte[] Seal(byte[] secret, DeviceProtection protection, string tpmKeyName)
+    private static byte[] OpenWithPin(byte[] payload, string pin)
     {
-        var sealedBytes = protection switch
-        {
-            DeviceProtection.Tpm => SealWithTpm(secret, tpmKeyName),
-            _ => ProtectedData.Protect(secret, null, DataProtectionScope.CurrentUser),
-        };
+        int keyLength = BinaryPrimitives.ReadUInt16LittleEndian(payload);
+        if (payload.Length < 2 + keyLength)
+            throw new InvalidDataException("This machine's own secret is damaged.");
 
-        var file = new byte[Magic.Length + 1 + sealedBytes.Length];
-        Magic.CopyTo(file, 0);
-        file[Magic.Length] = (byte)protection;
-        sealedBytes.CopyTo(file, Magic.Length + 1);
-        return file;
+        using var key = LoadWrappedKey(payload[2..(2 + keyLength)]);
+        key.SetProperty(PinProperty(pin));
+        return AskChip(key, payload[(2 + keyLength)..]);
     }
 
-    private static (byte[] Secret, DeviceProtection Protection) Open(byte[] file, string tpmKeyName)
+    /// <summary>
+    /// Decrypt with a key that has already loaded - so the chip is there, and it is the one that
+    /// sealed this. A refusal is then a wrong PIN, or "not now": resting after too many wrong PINs,
+    /// or busy. The lockout codes were deliberately never provoked on a real chip - locking it locks
+    /// Windows Hello's PIN too - so every refusal but a wrong PIN counts as "not now". Never "set
+    /// this PC up again": a resting chip would refuse that as well.
+    /// </summary>
+    private static byte[] AskChip(CngKey key, byte[] sealedSecret)
     {
-        if (file.Length < Magic.Length + 1 || !file.AsSpan(0, Magic.Length).SequenceEqual(Magic))
-            throw new InvalidDataException("This machine's device file is damaged.");
-
-        var protection = (DeviceProtection)file[Magic.Length];
-        var sealedBytes = file[(Magic.Length + 1)..];
-
-        var secret = protection switch
-        {
-            DeviceProtection.Tpm => OpenWithTpm(sealedBytes, tpmKeyName),
-            DeviceProtection.Dpapi => ProtectedData.Unprotect(sealedBytes, null, DataProtectionScope.CurrentUser),
-            _ => throw new InvalidDataException("This machine's device file uses a protection we do not know."),
-        };
-
-        return (secret, protection);
-    }
-
-    private static byte[] SealWithTpm(byte[] secret, string keyName)
-    {
-        using var key = OpenOrCreateTpmKey(keyName);
         using var rsa = new RSACng(key);
-        return rsa.Encrypt(secret, RSAEncryptionPadding.OaepSHA256);
+        try
+        {
+            return rsa.Decrypt(sealedSecret, RSAEncryptionPadding.OaepSHA256);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new PinRefusedException(lockedOut: ex.HResult != NtePerm);
+        }
     }
 
-    private static byte[] OpenWithTpm(byte[] sealedBytes, string keyName)
+    private static byte[] OpenLegacy(byte[] sealedSecret)
     {
-        if (!CngKey.Exists(keyName, TpmProvider))
+        if (!CngKey.Exists(LegacyTpmKeyName, TpmProvider))
             throw new InvalidOperationException(
                 "This machine's TPM key is gone - the chip was cleared, or Windows was reinstalled. " +
                 "Set this machine up again with your 12 words.");
 
-        using var key = CngKey.Open(keyName, TpmProvider);
-        using var rsa = new RSACng(key);
-        return rsa.Decrypt(sealedBytes, RSAEncryptionPadding.OaepSHA256);
+        using var key = CngKey.Open(LegacyTpmKeyName, TpmProvider);
+        return AskChip(key, sealedSecret);
     }
 
-    private static CngKey OpenOrCreateTpmKey(string keyName)
+    private static void ForgetLegacyKey()
     {
-        if (CngKey.Exists(keyName, TpmProvider)) return CngKey.Open(keyName, TpmProvider);
+        try
+        {
+            if (CngKey.Exists(LegacyTpmKeyName, TpmProvider)) CngKey.Open(LegacyTpmKeyName, TpmProvider).Delete();
+        }
+        catch (CryptographicException)
+        {
+            // No TPM provider on this PC, so there was never a legacy key to forget.
+        }
+    }
 
+    /// <summary>
+    /// A chip key under a throwaway name, deleted again before this returns - what is kept is
+    /// the chip-wrapped copy, inside machine.pvm, not Windows' key file in AppData.
+    ///
+    /// It would be simpler unnamed, but .NET 9 cannot make an unnamed key on this provider: it
+    /// fails with "Invalid flags specified" every time. That made the chip look absent, and
+    /// every set-up quietly fell back to Windows' own protection. The name exists only for as
+    /// long as it takes to make the key and export its wrapped copy.
+    /// </summary>
+    private static T WithTemporaryTpmKey<T>(string? pin, Func<CngKey, T> use)
+    {
+        var key = CngKey.Create(CngAlgorithm.Rsa, "PassVault.Making." + Guid.NewGuid().ToString("N"), TpmKeyParameters(pin));
+        try
+        {
+            return use(key);
+        }
+        finally
+        {
+            key.Delete();   // also closes it
+        }
+    }
+
+    /// <summary>The private half never leaves the chip; what is exported is wrapped by this chip and useless anywhere else.</summary>
+    private static CngKeyCreationParameters TpmKeyParameters(string? pin)
+    {
         var parameters = new CngKeyCreationParameters
         {
             Provider = TpmProvider,
-            ExportPolicy = CngExportPolicies.None,   // the private key must never leave the chip
+            ExportPolicy = CngExportPolicies.None,
         };
         parameters.Parameters.Add(new CngProperty("Length", BitConverter.GetBytes(2048), CngPropertyOptions.None));
-
-        return CngKey.Create(CngAlgorithm.Rsa, keyName, parameters);
+        if (pin is not null) parameters.Parameters.Add(PinProperty(pin));
+        return parameters;
     }
+
+    private static CngProperty PinProperty(string pin)
+        => new("SmartCardPin", Encoding.Unicode.GetBytes(pin + '\0'), CngPropertyOptions.None);
+
+    /// <summary>.NET's own CngKey.Import refuses this blob type ("Invalid flags"), so call Windows directly.</summary>
+    private static CngKey LoadWrappedKey(byte[] wrappedKey)
+    {
+        int status = NCryptOpenStorageProvider(out var provider, TpmProviderName, 0);
+        if (status != 0) throw new CryptographicException(status);
+
+        using (provider)
+        {
+            status = NCryptImportKey(provider, IntPtr.Zero, "OpaqueKeyBlob", IntPtr.Zero, out var key,
+                                     wrappedKey, wrappedKey.Length, NCryptSilentFlag);
+            if (status != 0) throw new CryptographicException(status);
+            return CngKey.Open(key, CngKeyHandleOpenOptions.None);
+        }
+    }
+
+    private static byte[] Pack(byte kind, byte[] payload)
+    {
+        var file = new byte[Magic.Length + 1 + payload.Length];
+        Magic.CopyTo(file, 0);
+        file[Magic.Length] = kind;
+        payload.CopyTo(file, Magic.Length + 1);
+        return file;
+    }
+
+    private static (byte Kind, byte[] Payload) Unpack(byte[] file)
+    {
+        if (file.Length < Magic.Length + 1 || !file.AsSpan(0, Magic.Length).SequenceEqual(Magic))
+            throw new InvalidDataException("This machine's own secret is damaged.");
+        return (file[Magic.Length], file[(Magic.Length + 1)..]);
+    }
+
+    private const int NCryptSilentFlag = 0x40;
+    private const int TpmVersion20 = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TpmDeviceInfo { public int StructVersion, TpmVersion, TpmInterfaceType, TpmImpRevision; }
+
+    [DllImport("tbs.dll")]
+    private static extern int Tbsi_GetDeviceInfo(int size, out TpmDeviceInfo info);
+
+    [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)]
+    private static extern int NCryptOpenStorageProvider(out SafeNCryptProviderHandle provider, string providerName, int flags);
+
+    [DllImport("ncrypt.dll", CharSet = CharSet.Unicode)]
+    private static extern int NCryptImportKey(SafeNCryptProviderHandle provider, IntPtr importKey, string blobType,
+                                              IntPtr parameterList, out SafeNCryptKeyHandle key, byte[] data,
+                                              int dataLength, int flags);
 }

@@ -197,7 +197,7 @@ public partial class RecoveryWindow : Window
     {
         var pin = NewPinBox.Password;
 
-        if (pin.Length != 4 || !pin.All(char.IsAsciiDigit)) { Say("A PIN is exactly 4 digits."); return; }
+        if (!Enrolment.IsPin(pin)) { Say("A PIN is 4 to 12 digits, 0 to 9."); return; }
         if (pin != NewPinAgainBox.Password) { Say("Those two PINs are not the same."); return; }
         if (_vault is null || _targetStick is null) { Say("Something went wrong - close this and start again."); return; }
 
@@ -239,8 +239,9 @@ public partial class RecoveryWindow : Window
         {
             await Task.Run(() =>
             {
-                (var deviceSecret, protection) = DeviceSecret.LoadForSetUp(_folder);
-                Enrolment.Enrol(_folder, target, newPhrase, pin, deviceSecret, protection);
+                var device = DeviceSecret.Create(pin);
+                protection = device.Protection;
+                Enrolment.Enrol(_folder, target, newPhrase, pin, device.Secret, device.Protection, device.Sealed);
             });
         }
         catch (Exception ex)

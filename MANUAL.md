@@ -31,7 +31,7 @@ things at once**:
 
 1. **Your USB stick** — the one you set up
 2. **The PC you set up** — a secret sealed inside its TPM chip, which cannot be copied off it
-3. **Your 4-digit PIN** — in your head
+3. **Your PIN** — 4 to 12 digits, in your head
 
 Missing any one of them and it does not open. There is no account, no cloud, and no server.
 Nothing ever leaves your machine.
@@ -79,7 +79,8 @@ Tick **I have written them down**, then press **Continue**.
 
 ### Step 4 — Choose a PIN
 
-Four digits, typed twice. This is what you will use every day.
+4 to 12 digits, typed twice. This is what you will use every day. **6 or more is much harder
+to guess** — see [What it protects you from](#what-it-protects-you-from-and-what-it-does-not).
 
 Press **Finish setting up**. You will see the lock mechanism work for about a second while
 your key is derived — that pause is deliberate, and it is what makes the PIN safe.
@@ -94,7 +95,7 @@ Your vault opens. You are done.
 2. Open PassVault
 3. Type your PIN
 
-It opens as soon as the fourth digit lands. No Enter needed.
+It opens as soon as the last digit lands. No Enter needed.
 
 **The four pins** you see are the four things being checked, and each one drops when that
 thing is genuinely in hand: your stick, this PC's chip, your key, your vault. When you unlock
@@ -106,6 +107,10 @@ PC's chip.
 It tells you how many tries are left. After three wrong tries it starts making you wait
 longer each time. After ten, the PIN switches off on that PC and you use your 12 words, which
 switches it back on.
+
+Your PC's chip counts wrong PINs too, on its own. After a lot of them — 32 on a normal Windows
+PC, counting Windows Hello's as well — it rests, and forgives one wrong PIN every two hours.
+PassVault says so if that happens. Your 12 words still work straight away.
 
 Nothing is deleted. Ever.
 
@@ -345,7 +350,7 @@ does the talking; PassVault still never opens a connection itself.
 over the top. You do **not** need to uninstall first.
 
 **Your vault, your PIN and your licence all survive an update.** The installer only replaces
-the program. Everything in `%LOCALAPPDATA%\PassVault` is left exactly as it was, and your
+the program. Everything in `%USERPROFILE%\PassVault` is left exactly as it was, and your
 stick is never touched.
 
 To see which version you have, press the button in the top bar — the one showing your name or
@@ -389,13 +394,15 @@ ever abandoned, the source gets published so it cannot die on you.
 **On each PC:**
 
 ```
-%LOCALAPPDATA%\PassVault\machine.pvm   this PC's PIN setup
-%LOCALAPPDATA%\PassVault\device.bin    this PC's secret, sealed by the TPM
-%LOCALAPPDATA%\PassVault\vault.pv      the spare copy of your vault
-%LOCALAPPDATA%\PassVault\licence.txt   your licence, if you have one
+%USERPROFILE%\PassVault\machine.pvm   this PC's PIN setup, and its secret sealed by the TPM
+%USERPROFILE%\PassVault\vault.pv      the spare copy of your vault
+%USERPROFILE%\PassVault\licence.txt   your licence, if you have one
 ```
 
-Paste `%LOCALAPPDATA%\PassVault` into File Explorer's address bar to get there.
+That is `C:\Users\<you>\PassVault`. Paste `%USERPROFILE%\PassVault` into File Explorer's
+address bar to get there. Versions before 1.0.2 kept it in `%LOCALAPPDATA%\PassVault`,
+with a `device.bin` beside it; PassVault moves it on its own the first time the new version
+starts, and folds `device.bin` into `machine.pvm` the first time you type your PIN.
 
 **Uninstalling PassVault does not delete any of this.** That is on purpose — the spare copy
 is a backup, and an uninstaller should never quietly destroy a backup.
@@ -411,11 +418,16 @@ is a backup, and an uninstaller should never quietly destroy a backup.
 - Someone copying your vault file — it is encrypted, and the phrase behind it is 128-bit
 - A cloud breach — there is no cloud
 - Someone putting an old copy of your vault back to undo a password change
+- Someone with your PC *and* your stick guessing your PIN — your PC's chip counts wrong PINs
+  itself, so trying them all takes years
 - A password turning up in a screen share, a recording or a screenshot by accident
 
 **It does not protect you from:**
 
-- Someone taking **your PC and your stick together** and later learning your PIN
+- Someone taking **your PC and your stick together** who also has **admin rights** on your PC.
+  They can reset the chip's count of wrong PINs, and then only your PIN's length stands in the
+  way. A 4-digit PIN falls quickly; 6 or more takes far longer. Or someone who simply learns
+  your PIN.
 - **Malware on your PC while the vault is open** — it can read everything on screen. Every
   password manager in the world shares this. That includes the screen-capture protection:
   it stops accidents, and a program already running on your PC can switch it off.

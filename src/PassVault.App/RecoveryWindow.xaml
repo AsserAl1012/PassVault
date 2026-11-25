@@ -83,11 +83,11 @@
 
             <!-- 4. a PIN for this PC -->
             <StackPanel x:Name="PinPanel" Visibility="Collapsed" VerticalAlignment="Top">
-                <TextBlock Text="PIN for this PC" Style="{StaticResource Label}"/>
-                <PasswordBox x:Name="NewPinBox" MaxLength="4" FontSize="20" PasswordChar="*"
+                <TextBlock Text="PIN for this PC - 4 to 12 digits" Style="{StaticResource Label}"/>
+                <PasswordBox x:Name="NewPinBox" MaxLength="12" FontSize="20" PasswordChar="*"
                              HorizontalContentAlignment="Center"/>
                 <TextBlock Text="Type it again" Style="{StaticResource Label}" Margin="0,14,0,5"/>
-                <PasswordBox x:Name="NewPinAgainBox" MaxLength="4" FontSize="20" PasswordChar="*"
+                <PasswordBox x:Name="NewPinAgainBox" MaxLength="12" FontSize="20" PasswordChar="*"
                              HorizontalContentAlignment="Center" KeyDown="OnPinKey"/>
                 <TextBlock Style="{StaticResource Sub}" FontSize="12" Margin="2,12,0,0" TextWrapping="Wrap"
                            Text="The new keys mean this PC has to be set up again. Any other PC you use will need its 12 words once too."/>
