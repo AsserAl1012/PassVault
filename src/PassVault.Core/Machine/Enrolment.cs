@@ -24,11 +24,32 @@ public static class Enrolment
     public const int MaxAttempts = 10;
 
     /// <summary>
+    /// 4 to 12 digits. The chip limits guessing either way, but someone with admin rights on
+    /// the PC can reset the chip's count - and then only the length of the PIN is left.
+    /// </summary>
+    public const int MinPinLength = KeyWrap.MinPinLength;
+    public const int MaxPinLength = KeyWrap.MaxPinLength;
+
+    public static bool IsPin(string pin)
+        => pin.Length is >= MinPinLength and <= MaxPinLength && pin.All(char.IsAsciiDigit);
+
+    private const string ChipResting =
+        "This PC's chip is not taking PINs just now - most likely it is resting after too many wrong "
+        + "ones, Windows Hello's included. It forgives one every two hours on a normal Windows PC. "
+        + "Your 12 words open your vault straight away.";
+
+    /// <summary>
     /// Set this machine up. Needs the 12 words once, then a PIN of your choosing.
     /// Also drops a spare copy of the encrypted vault here, so a dead stick is not the end.
     /// </summary>
+    /// <param name="sealedDevice">
+    /// This PC's new secret, sealed (DeviceSecret.Create). Written in the same file as the PIN
+    /// slot, and only once the 12 words have been checked - so typing the wrong words never
+    /// touches a working set-up.
+    /// </param>
     public static (MachineFile Machine, byte[] MasterKey) Enrol(
-        string folder, string stickRoot, string phrase, string pin, byte[] deviceSecret, DeviceProtection protection)
+        string folder, string stickRoot, string phrase, string pin, byte[] deviceSecret, DeviceProtection protection,
+        byte[]? sealedDevice = null)
     {
         var vault = VaultStorage.ReadVault(stickRoot);
         var keyfile = VaultStorage.ReadKeyfile(stickRoot);
@@ -49,6 +70,8 @@ public static class Enrolment
             HighestEpochSeen = header.Epoch,
             HighestRevisionSeen = header.Revision,
             Protection = protection,
+            PinLength = pin.Length,
+            Device = sealedDevice,
         };
 
         MachineStore.Write(folder, machine);
@@ -63,6 +86,14 @@ public static class Enrolment
     /// </summary>
     public static (byte[] MasterKey, MachineFile Machine) UnlockWithPin(
         string folder, string stickRoot, string pin, byte[] deviceSecret)
+        => UnlockWithPin(folder, stickRoot, pin, _ => deviceSecret);
+
+    /// <param name="openDeviceSecret">
+    /// Opens this PC's secret with the PIN. On a TPM machine the chip checks the PIN here and
+    /// throws <see cref="PinRefusedException"/>; that is what really limits guessing.
+    /// </param>
+    public static (byte[] MasterKey, MachineFile Machine) UnlockWithPin(
+        string folder, string stickRoot, string pin, Func<string, byte[]> openDeviceSecret)
     {
         if (!MachineStore.IsEnrolled(folder))
             throw new UnlockException("This machine is not set up yet. Use your 12 words to set it up.");
@@ -99,6 +130,27 @@ public static class Enrolment
         if (machine.FailedAttempts >= MaxAttempts) machine.PinDisabled = true;
         MachineStore.Write(folder, machine);
 
+        // Asked only after the try is counted, for the same reason. Anything else this throws -
+        // the chip cleared, the file damaged - is left to the caller to explain.
+        byte[] deviceSecret;
+        try
+        {
+            deviceSecret = openDeviceSecret(pin);
+        }
+        catch (PinRefusedException refused) when (refused.LockedOut)
+        {
+            // The chip did not look at the PIN, so nothing was learned: give the try back. Kept,
+            // ten tries with the right PIN while it rested switched the PIN off.
+            machine.FailedAttempts--;
+            machine.PinDisabled = false;
+            MachineStore.Write(folder, machine);
+            throw new UnlockException(ChipResting);
+        }
+        catch (PinRefusedException)
+        {
+            throw WrongPin(machine);
+        }
+
         byte[] masterKey;
         try
         {
@@ -107,10 +159,7 @@ public static class Enrolment
         }
         catch (CryptographicException)
         {
-            int left = MaxAttempts - machine.FailedAttempts;
-            throw new UnlockException(left > 0
-                ? $"Wrong PIN. {left} {(left == 1 ? "try" : "tries")} left before the PIN is switched off on this machine."
-                : "Wrong PIN. The PIN is now switched off on this machine - use your 12 words to switch it back on.");
+            throw WrongPin(machine);
         }
 
         machine.FailedAttempts = 0;
@@ -133,6 +182,14 @@ public static class Enrolment
         MachineStore.WriteMirrorVault(folder, vault);
 
         return (masterKey, machine);
+    }
+
+    private static UnlockException WrongPin(MachineFile machine)
+    {
+        int left = MaxAttempts - machine.FailedAttempts;
+        return new UnlockException(left > 0
+            ? $"Wrong PIN. {left} {(left == 1 ? "try" : "tries")} left before the PIN is switched off on this machine."
+            : "Wrong PIN. The PIN is now switched off on this machine - use your 12 words to switch it back on.");
     }
 
     /// <summary>

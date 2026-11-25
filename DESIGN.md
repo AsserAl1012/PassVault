@@ -11,7 +11,7 @@ later means breaking both apps at once, at the worst possible moment (someone's 
 There is one **master key**. The vault of passwords is encrypted with it. The master key
 itself is never stored in the clear — it's locked away twice, so there are two ways in:
 
-1. **Daily way**: your USB stick + a secret held by your PC's chip + your 4-digit PIN.
+1. **Daily way**: your USB stick + a secret held by your PC's chip + your PIN (4 to 12 digits).
 2. **Recovery way**: your 12-word phrase. Works on any machine, even with the stick gone.
 
 Lose the stick, use the words. Lose the PC, use the words. Lose the words *and* the stick,
@@ -25,7 +25,7 @@ you lose everything — that's the whole point.
 |---|---|---|---|
 | USB secret | 32 bytes | plain file on the stick | Yes, if they hold the stick |
 | Device secret | 32 bytes | sealed in your PC's TPM chip | No — it can't leave that machine |
-| PIN | 4 digits | your head | No |
+| PIN | 4 to 12 digits | your head | No |
 
 All three are needed. The USB secret is stored in plain sight on the stick on purpose —
 we assume a thief who holds the stick for one minute has it. It's a *token you carry*,
@@ -35,6 +35,15 @@ not a secret. The real protection is that it's useless without the other two.
 together) only needs to guess 4 digits — 10,000 tries, done offline, same afternoon. With
 the TPM, the unlock can only happen on that physical machine, so copying the folder or
 imaging the disk gets them nothing.
+
+**The chip also checks the PIN** (since 1.0.2). The device secret is sealed with a chip key
+that will only work when given the PIN, and the chip counts wrong PINs itself — on a normal
+Windows PC, 32, then one more every two hours. So even with the PC and the stick in hand, a
+thief cannot just try the 10,000 PINs: that takes years. Before 1.0.2 the chip released the
+secret without asking and only the app counted wrong tries, so skipping the app made it a few
+hours' work. The limit that remains: someone with admin rights on that PC can reset the chip's
+count, and then only the PIN's length stands in their way — which is why it can be up to 12
+digits.
 
 **The cost:** if the TPM is cleared, the motherboard is replaced, or Windows is reinstalled,
 that machine's PIN slot is dead. You then use your 12 words to set the machine up again.
@@ -86,9 +95,47 @@ message — **never** as key material.
 
 ### `machine.pvm` — on each PC (never on the stick, never in the cloud)
 
-Holds that machine's PIN slot, the failed-attempt count, and the highest epoch/revision
-seen. Keeping this off the stick is what makes stick-theft safe: the thief has no blob to
-test PIN guesses against.
+Holds that machine's PIN slot, the failed-attempt count, the PIN's length (so the unlock
+screen opens on the last digit), the highest epoch/revision seen, and the device secret,
+sealed (`device`, base64). Keeping this off the stick is what makes stick-theft safe: the
+thief has no blob to test PIN guesses against.
+
+The PIN slot and the sealed secret it needs are in **one file, written in one go**. Until
+1.0.2 the secret had a file of its own, `device.bin`: a crash between writing the two could
+leave them from two different set-ups, and then no PIN would ever open.
+
+### The sealed device secret
+
+`"PVDS" || kind(1) || payload`:
+
+| kind | payload | |
+|---|---|---|
+| 2 | keyLength(2) \|\| chip-wrapped key \|\| sealed secret | 1.0.2 on: the chip's key travels with it and needs the PIN |
+| 1 | the secret sealed by Windows (DPAPI) for this account | a PC with no TPM 2.0 |
+| 0 | the secret sealed with the named key `PassVault.DeviceKey`, no PIN | before 1.0.2 only |
+
+The chip-wrapped key (`OpaqueKeyBlob`) only loads on the chip that made it. Keeping it here,
+not in Windows' own key folder under AppData, is what lets a Microsoft Store install survive
+uninstalling: the Store deletes an app's AppData on uninstall.
+
+**Set-ups from before 1.0.2** keep it in `device.bin`, as kind 0 — or kind 1 where 1.0.1 failed
+to use a chip that was there. The first right PIN moves it into `machine.pvm`, seals it with
+the chip if the PC has one, deletes `device.bin`, and deletes the no-PIN key
+`PassVault.DeviceKey`. While that key exists, any old `device.bin` — in the old folder, or in a
+backup — still opens without a PIN. If any step fails, the vault opens anyway and the next
+unlock tries again.
+
+**When the chip says no.** A wrong PIN comes back as `NTE_PERM`, and the chip counts it. Any
+other refusal *after the key has loaded* means the chip is there but will not check just now
+(resting after too many wrong PINs, or busy): the app gives that try back and suggests the
+12 words. Only a key that will not load at all (chip cleared, board replaced) or a damaged
+secret means "set this PC up again".
+
+The files live in `%USERPROFILE%\PassVault` — not AppData, for the same reason, and not
+Documents, which Windows 11 backs up to OneDrive. Versions before 1.0.2 used
+`%LOCALAPPDATA%\PassVault`; the app moves it across once. While this PC is still set up only
+in the old folder (the move failed, or a folder with the new name was already there), the old
+one is used.
 
 ---
 
@@ -143,10 +190,14 @@ blob  = Seal(key, masterKey, aad = "pv1:slot:recovery:<vaultId>")
 ### PIN slot
 
 ```
-input = usbSecret(32) || deviceSecret(32) || pin as 4 ASCII digits(4)   <- 68 bytes, plain concatenation
+input = usbSecret(32) || deviceSecret(32) || pin as 4 to 12 ASCII digits   <- 68 to 76 bytes, plain concatenation
 key   = Argon2id(password = input, salt = slot salt)
 blob  = Seal(key, masterKey, aad = "pv1:slot:pin:<vaultId>:<machineId>")
 ```
+
+Plain concatenation still reads back only one way: both secrets are always exactly 32 bytes, so
+the PIN is everything after them. A 4-digit PIN gives exactly the 68 bytes it always did, so
+every PIN slot made before longer PINs, and `tests/vectors.json`, are unchanged.
 
 Plain concatenation of fixed-length parts, **not** Argon2's "secret" parameter —
 libsodium on iOS doesn't have that parameter, so it isn't portable.
@@ -207,7 +258,9 @@ and if he ever gets your PIN and your PC, those old passwords are exposed.
 
 ## Honest limits
 
-1. A thief who takes **your PC and your stick together** and later learns your PIN gets in.
+1. A thief who takes **your PC and your stick together** can try PINs — but only as fast as the
+   chip allows (32, then one every two hours), which is years for 4 digits. Someone with admin
+   rights on that PC can reset the chip's count; then only the PIN's length protects you.
 2. **Malware on your machine while the vault is unlocked** reads everything. Every password
    manager on earth shares this.
 3. Anyone holding the stick can copy the encrypted vault and attack the 12-word phrase

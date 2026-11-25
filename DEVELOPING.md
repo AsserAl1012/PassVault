@@ -34,7 +34,11 @@ dotnet run --project src/PassVault.App
 dotnet test
 ```
 
-203 tests, about 40 seconds. Most of that is Argon2 doing real work on purpose.
+230 tests, about 45 seconds. Most of that is Argon2 and the TPM doing real work on purpose.
+
+`DeviceSecretTests` use this PC's real TPM and never give it a wrong PIN: the chip counts every
+wrong one, the count is shared with Windows Hello, and at 32 both lock for hours. Test refusals
+with a stand-in, as `ChipPinTests` does.
 
 ### Build everything
 
@@ -72,7 +76,7 @@ dotnet run --project src/PassVault.Cli -- forget
 rm -r "E:\PassVault"
 ```
 ```bash
-rm -r "$env:LOCALAPPDATA\PassVault"
+rm -r "$env:USERPROFILE\PassVault"
 ```
 
 > `forget` also deletes this PC's TPM key. The vault on the stick is untouched — you just
@@ -135,7 +139,7 @@ Out comes `dist/PassVault-1.0.0-setup.exe`, about 52MB.
 & "$env:LOCALAPPDATA\Programs\PassVault\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES
 ```
 
-After uninstalling, check `%LOCALAPPDATA%\PassVault` is **still there**. The uninstaller is
+After uninstalling, check `%USERPROFILE%\PassVault` is **still there**. The uninstaller is
 meant to leave vault data alone, and that is worth re-checking whenever the script changes.
 
 ### Releasing a new version
@@ -158,14 +162,14 @@ a licence, then installed 1.0.1 over the top:
 | | |
 |---|---|
 | Installed Apps | one entry, 1.0.1 - not two copies |
-| `vault.pv`, `machine.pvm`, `device.bin` | untouched |
+| `vault.pv`, `machine.pvm`, `device.bin` (before 1.0.2) | untouched |
 | `licence.txt` | untouched, still verifies |
 | The PIN | still opens the vault |
 | The credential | still there, password intact |
 
 Re-run that check whenever the installer script changes. The failure mode is silent and
-severe: a user who loses `device.bin` loses their PIN, and one who loses `licence.txt` looks
-unlicensed. Both would be blamed on the update, correctly.
+severe: a user who loses `machine.pvm` (or, before 1.0.2, `device.bin`) loses their PIN, and
+one who loses `licence.txt` looks unlicensed. Both would be blamed on the update, correctly.
 
 ### How users actually get updates
 
@@ -235,7 +239,7 @@ src/PassVault.Core/       all the logic, no screens
   Licensing/              the offline licence check
 src/PassVault.App/        the Windows app
 src/PassVault.Cli/        the console tool
-src/PassVault.Tests/      203 tests
+src/PassVault.Tests/      230 tests
 src/PassVault.Sync/       the LAN reachability probe (step 7, unfinished)
 
 ios/                      the iPhone app - never compiled, needs a Mac
@@ -266,6 +270,16 @@ while both test suites stayed green, which is exactly what they exist to prevent
 
 **Never change `DESIGN.md`'s file format.** Both apps implement it, and the moment it breaks
 is somebody's real recovery.
+
+**.NET 9 cannot make an unnamed key on the TPM provider** — `CngKey.Create` fails with "Invalid
+flags specified". `DeviceSecret` makes each key under a throwaway name and deletes it once the
+chip-wrapped copy is taken. When that broke, the chip looked absent and every set-up quietly
+used the weaker fallback, so check a TPM with Windows' own `Tbsi_GetDeviceInfo`, not by making
+a key.
+
+**This PC's folder is `%USERPROFILE%\PassVault`, not AppData.** A Microsoft Store (MSIX) build
+redirects new AppData folders into a private copy and deletes it on uninstall. That includes
+running PassVault from inside another packaged app, such as a terminal in the Claude desktop app.
 
 ---
 

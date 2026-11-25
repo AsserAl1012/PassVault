@@ -3,7 +3,7 @@
 A password, username and email manager for Windows, with an iPhone app later.
 
 To open it on Windows you need three things: **your USB stick**, **the PC you set up**, and
-**your 4-digit PIN**. If you lose the stick, a **12-word phrase** gets everything back.
+**your PIN**. If you lose the stick, a **12-word phrase** gets everything back.
 
 **[MANUAL.md](MANUAL.md)** — how to use it. Start here.
 **[DEVELOPING.md](DEVELOPING.md)** — how to build, run, package and sell it.

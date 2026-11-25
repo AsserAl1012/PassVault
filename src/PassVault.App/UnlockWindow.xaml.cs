@@ -34,6 +34,9 @@ public partial class UnlockWindow : Window
     private bool _midFlow;
     private bool _tryingPin;
 
+    /// <summary>How long this PC's PIN is, so the vault opens the moment the last digit lands.</summary>
+    private int _pinLength = Enrolment.MinPinLength;
+
     public UnlockWindow()
     {
         InitializeComponent();
@@ -149,6 +152,8 @@ public partial class UnlockWindow : Window
             return;
         }
 
+        _pinLength = machine.PinLength;
+
         if (PinPanel.Visibility != Visibility.Visible)
         {
             Show(PinPanel);
@@ -245,7 +250,7 @@ public partial class UnlockWindow : Window
     {
         var pin = NewPinBox.Password;
 
-        if (pin.Length != 4 || !pin.All(char.IsAsciiDigit)) { Say("A PIN is exactly 4 digits."); return; }
+        if (!Enrolment.IsPin(pin)) { Say("A PIN is 4 to 12 digits, 0 to 9."); return; }
         if (pin != NewPinAgainBox.Password) { Say("Those two PINs are not the same."); return; }
         if (_stick is null || _phraseForSetup is null) { Say("Something went wrong - start again."); return; }
 
@@ -258,12 +263,13 @@ public partial class UnlockWindow : Window
         await RunSlowly("Setting this PC up", "Argon2id · 64 MiB · 3 passes", report =>
         {
             report.Report(StickFound);
-            var (deviceSecret, protection) = DeviceSecret.LoadForSetUp(_folder);
-            _noticeForVault = protection == DeviceProtection.Dpapi ? NoChipNotice : null;
+            var device = DeviceSecret.Create(pin);
+            _noticeForVault = device.Protection == DeviceProtection.Dpapi ? NoChipNotice : null;
             report.Report(ChipRead);
 
             report.Report(Deriving);
-            var key = Enrolment.Enrol(_folder, stickRoot, setupPhrase, pin, deviceSecret, protection).MasterKey;
+            var key = Enrolment.Enrol(_folder, stickRoot, setupPhrase, pin,
+                                      device.Secret, device.Protection, device.Sealed).MasterKey;
             report.Report(KeyReady);
             return key;
         });
@@ -273,7 +279,7 @@ public partial class UnlockWindow : Window
 
     private void OnPinTyped(object sender, RoutedEventArgs e)
     {
-        if (PinBox.Password.Length == 4) TryPin();
+        if (PinBox.Password.Length == _pinLength) TryPin();
     }
 
     private void OnPinKey(object sender, KeyEventArgs e)
@@ -287,12 +293,22 @@ public partial class UnlockWindow : Window
 
         var pin = PinBox.Password;
 
-        if (pin.Length != 4 || !pin.All(char.IsAsciiDigit))
+        if (!Enrolment.IsPin(pin))
         {
             // A bare return made the app look broken: four asterisks sitting in the box,
             // Enter doing nothing, no message at all. The setup screen says "A PIN is exactly
             // 4 digits" for byte-identical input, so the two screens disagreed as well.
-            if (pin.Length > 0) { Say("A PIN is 4 digits, 0 to 9."); PinBox.Clear(); }
+            if (pin.Length > 0) { Say("A PIN is 4 to 12 digits, 0 to 9."); PinBox.Clear(); }
+            return;
+        }
+
+        // It cannot be right, and asking the chip would spend one of its tries - shared with
+        // Windows Hello, and forgiven one every two hours. The length is no secret: the box
+        // opens the vault the moment it is reached.
+        if (pin.Length != _pinLength)
+        {
+            Say($"Your PIN here is {_pinLength} digits.");
+            PinBox.Clear();
             return;
         }
 
@@ -340,21 +356,31 @@ public partial class UnlockWindow : Window
             await RunSlowly("Opening your vault", "Argon2id · 64 MiB · 3 passes", report =>
             {
                 report.Report(StickFound);
-                byte[] deviceSecret;
-                try
-                {
-                    (deviceSecret, _) = DeviceSecret.Load(_folder);
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException
-                                               or System.Security.Cryptography.CryptographicException)
-                {
-                    chipLost = true;   // this PC's own secret cannot be opened any more - see below
-                    throw;
-                }
-                report.Report(ChipRead);
 
-                report.Report(Deriving);
-                var key = Enrolment.UnlockWithPin(_folder, stickRoot, pin, deviceSecret).MasterKey;
+                // The chip is asked inside the unlock, after the try has been counted - it is the
+                // chip that checks the PIN now. A wrong PIN comes back from it as a wrong PIN;
+                // anything else means this PC's secret cannot be opened any more.
+                var key = Enrolment.UnlockWithPin(_folder, stickRoot, pin, typed =>
+                {
+                    try
+                    {
+                        var secret = DeviceSecret.Open(_folder, typed).Secret;
+                        report.Report(ChipRead);
+                        report.Report(Deriving);
+                        return secret;
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException
+                                                   or System.Security.Cryptography.CryptographicException)
+                    {
+                        chipLost = true;   // see below
+                        throw;
+                    }
+                }).MasterKey;
+
+                // Proven right, so a set-up from before the chip checked PINs can move over now.
+                // It never throws: what fails is tried again next time.
+                DeviceSecret.UpgradeIfOld(_folder, pin);
+
                 report.Report(KeyReady);
                 return key;
             });

@@ -101,7 +101,7 @@ public class KeyWrapTests
 
     [Theory]
     [InlineData("123")]
-    [InlineData("12345")]
+    [InlineData("1234567890123")]   // 13 digits: longer PINs are fine, up to 12
     [InlineData("12a4")]
     [InlineData("")]
     public void A_bad_pin_is_refused_up_front(string pin)

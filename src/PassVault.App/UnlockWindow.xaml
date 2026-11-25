@@ -82,18 +82,21 @@
                 <TextBox x:Name="PhraseBox" Height="86" TextWrapping="Wrap" AcceptsReturn="True"
                          FontFamily="Consolas" VerticalContentAlignment="Top"/>
                 <Button Style="{StaticResource Primary}" Content="Continue" Margin="0,16,0,0" Click="OnEnrolPhrase"/>
+                <!-- If setting up fails - a chip that is resting, say - the vault must still open. -->
+                <Button Style="{StaticResource Quiet}" Content="Just open my vault with my 12 words"
+                        Margin="0,8,0,0" Click="OnUsePhraseInstead"/>
             </StackPanel>
 
             <!-- choose a PIN -->
             <StackPanel x:Name="PinSetupPanel" Visibility="Collapsed" VerticalAlignment="Top">
-                <TextBlock Text="Choose a 4-digit PIN" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                <TextBlock Style="{StaticResource Sub}" FontSize="12" Margin="0,0,0,16"
-                           Text="This is what you will type every day, with your stick plugged in."/>
+                <TextBlock Text="Choose a PIN" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock Style="{StaticResource Sub}" FontSize="12" Margin="0,0,0,16" TextWrapping="Wrap"
+                           Text="4 to 12 digits - 6 or more is much harder to guess. You will type it every day, with your stick plugged in."/>
                 <TextBlock Text="PIN" Style="{StaticResource Label}"/>
-                <PasswordBox x:Name="NewPinBox" MaxLength="4" FontSize="20" PasswordChar="*"
+                <PasswordBox x:Name="NewPinBox" MaxLength="12" FontSize="20" PasswordChar="*"
                              HorizontalContentAlignment="Center"/>
                 <TextBlock Text="Type it again" Style="{StaticResource Label}" Margin="0,14,0,5"/>
-                <PasswordBox x:Name="NewPinAgainBox" MaxLength="4" FontSize="20" PasswordChar="*"
+                <PasswordBox x:Name="NewPinAgainBox" MaxLength="12" FontSize="20" PasswordChar="*"
                              HorizontalContentAlignment="Center" KeyDown="OnPinSetupKey"/>
                 <Button Style="{StaticResource Primary}" Content="Finish setting up"
                         Margin="0,18,0,0" Click="OnPinChosen"/>
@@ -102,7 +105,7 @@
             <!-- the everyday unlock -->
             <StackPanel x:Name="PinPanel" Visibility="Collapsed" VerticalAlignment="Top">
                 <TextBlock Text="Enter your PIN" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <PasswordBox x:Name="PinBox" MaxLength="4" FontSize="26" PasswordChar="*"
+                <PasswordBox x:Name="PinBox" MaxLength="12" FontSize="26" PasswordChar="*"
                              HorizontalContentAlignment="Center" Padding="10,12"
                              PasswordChanged="OnPinTyped" KeyDown="OnPinKey"/>
                 <Button Style="{StaticResource Quiet}" Content="Use my 12 words instead"
@@ -117,7 +120,7 @@
                 <TextBox x:Name="RecoveryBox" Height="86" TextWrapping="Wrap" AcceptsReturn="True"
                          FontFamily="Consolas" VerticalContentAlignment="Top"/>
                 <Button Style="{StaticResource Primary}" Content="Open my vault" Margin="0,16,0,0" Click="OnPhraseUnlock"/>
-                <Button Style="{StaticResource Quiet}" Content="Back to PIN" Margin="0,8,0,0" Click="OnBackToPin"/>
+                <Button Style="{StaticResource Quiet}" Content="Back" Margin="0,8,0,0" Click="OnBackToPin"/>
             </StackPanel>
 
             <!-- The unlock second. Top-aligned like every other panel - the old one was

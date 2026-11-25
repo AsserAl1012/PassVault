@@ -10,7 +10,7 @@
 ; download, nothing to agree to, and nothing to go wrong on a machine with no internet.
 
 #define AppName       "PassVault"
-#define AppVersion    "1.0.1"
+#define AppVersion    "1.0.2"
 #define AppPublisher  "PassVault"
 #define AppExe        "PassVault.exe"
 
@@ -77,7 +77,7 @@ WelcomeLabel2=This will install [name/ver] on your computer.%n%nPassVault keeps 
 [Code]
 { Uninstalling must never take the vault with it.
 
-  %LOCALAPPDATA%\PassVault holds this PC's setup and the spare copy of the encrypted
+  %USERPROFILE%\PassVault holds this PC's setup and the spare copy of the encrypted
   vault - the thing that saves you when the stick dies. Deleting it on uninstall would
   quietly destroy a backup the person does not know they are relying on, so we leave it
   and tell them where it is. }
@@ -88,7 +88,7 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    DataDir := ExpandConstant('{localappdata}\PassVault');
+    DataDir := ExpandConstant('{%USERPROFILE}\PassVault');
     { SuppressibleMsgBox, not MsgBox: a plain MsgBox ignores /SUPPRESSMSGBOXES, so a
       silent uninstall - the one DEVELOPING.md uses, and the one winget runs - sat
       waiting for someone to press OK. Anyone clicking Uninstall still sees it. }

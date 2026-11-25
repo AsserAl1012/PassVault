@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using PassVault.Core.Machine;
@@ -516,45 +517,125 @@ internal static class KeyWrapNames
 
 /// <summary>The real TPM on this machine. Uses its own key name so it cannot disturb a real setup.</summary>
 [SupportedOSPlatform("windows")]
+/// <summary>
+/// Against this PC's real TPM. There is deliberately no wrong-PIN test here: the chip counts
+/// every wrong PIN, the count is shared with Windows Hello, and after 32 both lock. A test that
+/// ran on every build would walk the owner towards that. The wrong-PIN path was checked by hand
+/// once (the chip refused with NTE_PERM and its counter went up by one), and ChipPinTests
+/// covers what the app does with a refusal.
+/// </summary>
 public class DeviceSecretTests : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "pv-dev-" + Guid.NewGuid().ToString("N")[..8]);
-    private const string TestKeyName = "PassVault.Test.DeviceKey";
+    private const string Pin = "482917";
 
+    /// <summary>
+    /// Whether this PC has a TPM, asked of Windows' own TPM service. Not DeviceSecret.TpmIsUsable:
+    /// when that probe broke, these tests asked it, heard "no chip", and passed on the fallback.
+    /// </summary>
+    private static bool ChipPresent()
+        => Tbsi_GetDeviceInfo(Marshal.SizeOf<TpmInfo>(), out var info) == 0 && info.TpmVersion == 2;
+
+    [DllImport("tbs.dll")] private static extern int Tbsi_GetDeviceInfo(int size, out TpmInfo info);
+    [StructLayout(LayoutKind.Sequential)] private struct TpmInfo { public int StructVersion, TpmVersion, TpmInterfaceType, TpmImpRevision; }
+
+    // Plain deletes, not DeviceSecret.Forget: Forget also removes the old-style named key,
+    // which on a real PC belongs to the owner's own set-up.
     public void Dispose()
     {
-        DeviceSecret.Forget(_folder, TestKeyName);
         if (Directory.Exists(_folder)) Directory.Delete(_folder, recursive: true);
         GC.SuppressFinalize(this);
     }
 
     [Fact]
-    public void The_same_secret_comes_back_every_time()
+    public void The_same_secret_comes_back_with_the_same_PIN()
     {
-        var (first, protection) = DeviceSecret.Load(_folder, TestKeyName);
-        var (second, again) = DeviceSecret.Load(_folder, TestKeyName);
+        var made = DeviceSecret.Create(Pin);
 
-        Assert.Equal(32, first.Length);
-        Assert.Equal(first, second);
-        Assert.Equal(protection, again);
+        var (secret, protection) = DeviceSecret.Open(made.Sealed, Pin);
+
+        Assert.Equal(32, secret.Length);
+        Assert.Equal(made.Secret, secret);
+        Assert.Equal(made.Protection, protection);
     }
 
     [Fact]
-    public void The_secret_is_not_sitting_in_the_file_in_the_clear()
+    public void The_secret_is_not_sitting_in_the_sealed_bytes_in_the_clear()
     {
-        var (secret, _) = DeviceSecret.Load(_folder, TestKeyName);
-        var onDisk = File.ReadAllBytes(Path.Combine(_folder, DeviceSecret.FileName));
+        var made = DeviceSecret.Create(Pin);
+        Assert.DoesNotContain(Convert.ToHexString(made.Secret), Convert.ToHexString(made.Sealed));
+    }
 
-        Assert.DoesNotContain(Convert.ToHexString(secret), Convert.ToHexString(onDisk));
+    /// <summary>
+    /// The chip's key travels inside the sealed bytes, so they open from wherever they are kept -
+    /// a moved folder, or out of a Store app's AppData. The old way kept the key in Windows' own
+    /// files, which the Store deletes on uninstall.
+    /// </summary>
+    [Fact]
+    public void Nothing_is_left_behind_in_Windows_key_folder()
+    {
+        if (!ChipPresent()) return;   // a PC without a TPM uses Windows' own protection instead
+        var keys = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Crypto", "PCPKSP");
+        int Count() => Directory.Exists(keys) ? Directory.GetFiles(keys, "*", SearchOption.AllDirectories).Length : 0;
+
+        int before = Count();
+        DeviceSecret.Open(DeviceSecret.Create(Pin).Sealed, Pin);
+
+        Assert.Equal(before, Count());
+    }
+
+    /// <summary>
+    /// 1.0.1 failed to use the chip on some PCs that had one and sealed with Windows' own
+    /// protection instead. The first unlock after the update must move that to the chip, into
+    /// machine.pvm, and leave no copy behind that opens without the chip.
+    /// </summary>
+    [Fact]
+    public void A_set_up_that_Windows_sealed_moves_to_the_chip_on_the_first_unlock()
+    {
+        if (!ChipPresent()) return;
+
+        // The upgrade ends by deleting 1.0.1's no-PIN chip key. On a PC where that belongs to a
+        // real 1.0.1 set-up, this test must not be what deletes it.
+        if (CngKey.Exists(DeviceSecret.LegacyTpmKeyName, new CngProvider("Microsoft Platform Crypto Provider"))) return;
+
+        var secret = RandomNumberGenerator.GetBytes(32);
+        MachineStore.Write(_folder, new MachineFile { Protection = DeviceProtection.Dpapi });
+        File.WriteAllBytes(Path.Combine(_folder, DeviceSecret.FileName),
+                           [.. "PVDS"u8, 1, .. ProtectedData.Protect(secret, null, DataProtectionScope.CurrentUser)]);
+
+        DeviceSecret.UpgradeIfOld(_folder, Pin);
+
+        var machine = MachineStore.Read(_folder);
+        Assert.Equal(DeviceProtection.Tpm, machine.Protection);
+        Assert.Equal(2, machine.Device![4]);   // "PVDS" then kind 2: the chip checks the PIN
+        Assert.Equal(secret, DeviceSecret.Open(_folder, Pin).Secret);
+        Assert.False(File.Exists(Path.Combine(_folder, DeviceSecret.FileName)));
+    }
+
+    /// <summary>
+    /// The other tests would all pass if the chip step quietly fell back to Windows' own
+    /// protection - which it once did. On a PC with a chip, the chip must be what is used.
+    /// </summary>
+    [Fact]
+    public void On_a_PC_with_a_chip_the_chip_is_what_seals_it()
+    {
+        if (!ChipPresent()) return;
+
+        Assert.True(DeviceSecret.TpmIsUsable(), "Windows says there is a TPM, but PassVault could not use it");
+
+        var made = DeviceSecret.Create(Pin);
+
+        Assert.Equal(DeviceProtection.Tpm, made.Protection);
+        Assert.Equal(2, made.Sealed[4]);   // "PVDS" then kind 2
+        Assert.Equal(DeviceProtection.Tpm, DeviceSecret.Open(made.Sealed, Pin).Protection);
     }
 
     [Fact]
-    public void Forgetting_it_means_a_new_one_next_time()
-    {
-        var (first, _) = DeviceSecret.Load(_folder, TestKeyName);
-        DeviceSecret.Forget(_folder, TestKeyName);
-        var (second, _) = DeviceSecret.Load(_folder, TestKeyName);
+    public void A_missing_secret_says_so()
+        => Assert.Throws<InvalidOperationException>(() => DeviceSecret.Open(_folder, Pin));
 
-        Assert.NotEqual(first, second);
-    }
+    /// <summary>The upgrade runs after the vault has opened, and nothing it hits may undo that.</summary>
+    [Fact]
+    public void An_upgrade_that_cannot_happen_never_throws()
+        => DeviceSecret.UpgradeIfOld(_folder, Pin);   // no set-up here at all
 }

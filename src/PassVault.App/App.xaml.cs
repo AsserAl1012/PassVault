@@ -31,6 +31,9 @@ public partial class App : Application
 
         DispatcherUnhandledException += OnUnhandled;
         ScreenGuard.Decide(e.Args);
+
+        // Versions before 1.0.2 kept this PC's files in AppData. See MachineStore.DefaultFolder.
+        PassVault.Core.Machine.MachineStore.MoveFromOldPlace();
         base.OnStartup(e);
     }
 
