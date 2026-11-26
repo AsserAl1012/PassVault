@@ -1,15 +1,40 @@
+using PassVault.Core.Config;
+using PassVault.Core.Crypto;
 using PassVault.Core.Machine;
 using PassVault.Core.Model;
 using PassVault.Core.Usb;
 using PassVault.Core.Vault;
 
-// A small console tool to drive the core while there is no window yet.
+// The console tool: everything the app does, without a window - for scripts, for testing, and
+// for people who would rather type.
+
+// "--set key=value" can go anywhere, any number of times; what is left is the command.
+var overrides = new List<string>();
+var rest = new List<string>();
+for (int i = 0; i < args.Length; i++)
+{
+    if (args[i] == "--set" && i + 1 < args.Length) overrides.Add(args[++i]);
+    else if (args[i].StartsWith("--set=")) overrides.Add(args[i][6..]);
+    else rest.Add(args[i]);
+}
+args = [.. rest];
 
 try
 {
     MachineStore.MoveFromOldPlace();
-    return (args.Length == 0 ? "help" : args[0].ToLowerInvariant()) switch
+    Current.Settings = Settings.Load(overrides: overrides);
+    foreach (var problem in Current.Settings.Problems) Console.Error.WriteLine($"settings: {problem}");
+    UsbDetect.ExtraPlaces.AddRange(Current.Settings.ExtraStickPlaces);
+    if (!OperatingSystem.IsWindows()) LinuxChip.Allowed = Current.Settings.UseChip;
+
+    // On its own, in a terminal, passvault opens full screen. Piped or scripted, it explains itself.
+    if (args.Length == 0)
+        return Console.IsInputRedirected || Console.IsOutputRedirected ? Help() : PassVault.Cli.Tui.Run(Current.Settings);
+
+    return args[0].ToLowerInvariant() switch
     {
+        "config" => Config(args.Length > 1 ? args[1] : ""),
+        "generate" => Generate(),
         "find" => Find(),
         "init" => Init(Drive(args)),
         "enrol" or "enroll" => Enrol(Drive(args)),
@@ -35,21 +60,72 @@ catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundExcept
 static int Help()
 {
     Console.WriteLine("""
-        PassVault - steps 1 to 3 (no window yet)
+        PassVault, in the console
 
-          find              show every USB stick Windows can read
+          (nothing)         open PassVault full screen in this terminal
+
+          find              show every USB stick PassVault can see
           init   <drive>    set up a fresh stick, prints your 12 words
           enrol  <drive>    set this PC up: 12 words once, then choose a PIN
           status <drive>    what is on that stick, and how this PC is set up
           list   <drive>    open the vault and show your credentials
           add    <drive>    open the vault and add one credential
           forget            undo this PC's setup (the vault is untouched)
+          generate          print a new strong password
+          config            show every setting, where the file is, and anything wrong in it
+          config init       write a settings file with every setting explained
+
+          --set key=value   change a setting for this run only, e.g. --set generator.length=32
 
         Once this PC is set up, list and add ask for your PIN.
         Before that, and any time the PIN is locked out, they ask for your 12 words.
 
-        Example:  PassVault.Cli enrol "E:\"
+        Example:  PassVault.Cli enrol "E:\"      on Linux:  PassVault.Cli enrol "/media/you/STICK"
         """);
+    return 0;
+}
+
+static int Config(string what)
+{
+    var path = Settings.DefaultPath;
+    if (what == "init")
+    {
+        if (File.Exists(path))
+        {
+            Console.WriteLine($"There is a settings file already - left alone:\n  {path}");
+            return 1;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, Settings.Template.Replace("\r\n", "\n") + "\n");
+        Console.WriteLine($"Written, with every setting at its default and explained:\n  {path}");
+        return 0;
+    }
+
+    var s = Current.Settings;
+    Console.WriteLine($"settings file   {path}{(File.Exists(path) ? "" : "   (not there - all defaults; 'config init' writes one)")}");
+    Console.WriteLine($"""
+
+        lock.after_minutes            = {s.LockAfterMinutes}
+        lock.when_stick_removed       = {Bool(s.LockWhenStickRemoved)}
+        lock.when_screen_locks        = {Bool(s.LockWhenScreenLocks)}
+        clipboard.clear_after_seconds = {s.ClearClipboardAfterSeconds}
+        generator.length              = {s.GeneratorLength}
+        generator.symbols             = {Bool(s.GeneratorSymbols)}
+        pin.min_length                = {s.MinPinLength}
+        sticks.extra_places           = [{string.Join(", ", s.ExtraStickPlaces.Select(p => $"\"{p}\""))}]
+        chip.use                      = "{(s.UseChip ? "auto" : "off")}"
+        look.theme                    = "{s.Theme}"
+        look.font_size                = {s.FontSize}
+        """);
+    if (s.Problems.Count > 0) Console.WriteLine($"\n{s.Problems.Count} problem(s) - listed above.");
+    return s.Problems.Count == 0 ? 0 : 1;
+
+    static string Bool(bool b) => b ? "true" : "false";
+}
+
+static int Generate()
+{
+    Console.WriteLine(PasswordGenerator.Make(Current.Settings.GeneratorLength, Current.Settings.GeneratorSymbols));
     return 0;
 }
 
@@ -58,8 +134,8 @@ static int Find()
     var sticks = UsbDetect.Find();
     if (sticks.Count == 0)
     {
-        Console.WriteLine("No USB stick found that Windows can read.");
-        Console.WriteLine("If one is plugged in, Windows may not understand its filesystem");
+        Console.WriteLine("No USB stick found that this PC can read.");
+        Console.WriteLine("If one is plugged in, this PC may not understand its filesystem");
         Console.WriteLine("(a Linux drive, for example) - it gets no drive letter and cannot be used.");
         return 1;
     }
@@ -120,11 +196,11 @@ static int Enrol(string root)
     Console.WriteLine($"  machine secret   {Describe(machine.Protection)}");
     Console.WriteLine($"  spare vault      {MachineStore.MirrorVaultPathIn(folder)}");
 
-    if (machine.Protection == DeviceProtection.Dpapi)
-        Console.WriteLine("""
+    if (machine.Protection != DeviceProtection.Tpm)
+        Console.WriteLine($"""
 
-            Heads up: no usable TPM was found, so this PC's secret is tied to your Windows
-            account instead of the chip. That is weaker - someone who can log in as you can
+            Heads up: no usable TPM was found, so this PC's secret is {Describe(machine.Protection)}
+            instead of sealed in the chip. That is weaker - someone who can log in as you can
             get it. Everything still works; it just leans more on the PIN.
             """);
 
@@ -294,6 +370,7 @@ static (byte[] Vault, byte[] MasterKey) Open(string root)
 static string Describe(DeviceProtection protection) => protection switch
 {
     DeviceProtection.Tpm => "sealed in this PC's TPM chip - it cannot leave this machine",
+    DeviceProtection.UserFile => "kept in a file only you can read (no TPM found) - weaker",
     _ => "tied to your Windows account (no TPM found) - weaker",
 };
 
@@ -308,7 +385,13 @@ static string NewPin()
 {
     while (true)
     {
-        var first = AskPin("Choose a PIN, 4 to 12 digits");
+        int shortest = Current.Settings.MinPinLength;
+        var first = AskPin($"Choose a PIN, {shortest} to 12 digits");
+        if (first.Length < shortest)
+        {
+            Console.WriteLine($"  Your settings ask for at least {shortest} digits (pin.min_length).");
+            continue;
+        }
         var again = AskPin("Type it again");
         if (first == again) return first;
         Console.WriteLine("  Those did not match. Try again.");
@@ -349,7 +432,9 @@ static string ReadHidden()
 }
 
 static string Drive(string[] args)
-    => args.Length > 1 ? args[1] : throw new ArgumentException("Which drive? For example:  E:\\");
+    => args.Length > 1 ? args[1] : throw new ArgumentException(OperatingSystem.IsWindows()
+        ? "Which drive? For example:  E:\\"
+        : "Which stick? For example:  /media/you/STICK");
 
 static string Required(string label)
 {
@@ -370,4 +455,10 @@ static string? Optional(string label)
     Console.Write($"  {label} (leave blank to skip): ");
     var value = Console.ReadLine();
     return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+/// <summary>The settings for this run - read once at the start, used by the commands above.</summary>
+static class Current
+{
+    public static Settings Settings { get; set; } = Settings.Load("");
 }

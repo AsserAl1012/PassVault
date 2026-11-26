@@ -147,7 +147,7 @@ this matches Apple CryptoKit's combined format, so iOS needs no byte-shuffling.
 - A **fresh random 12-byte nonce on every single encryption.** Never a counter. A counter
   plus any backup or restore repeats a nonce, and a repeated nonce with the same key leaks
   the contents of both files and lets someone forge a fake vault.
-- On .NET 9, always `new AesGcm(key, tagSizeInBytes: 16)`.
+- On .NET 9 and later, always `new AesGcm(key, tagSizeInBytes: 16)`.
 
 ### What gets authenticated alongside what (the "AAD")
 

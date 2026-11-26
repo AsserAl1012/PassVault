@@ -20,16 +20,18 @@ public static class PasswordGenerator
     // the ones sites most often reject or quietly mangle.
     public const string Symbols = "!#$%&*+-=?@_";
 
-    public static string Make()
+    /// <param name="length">At least 12 - see Settings for the range a user can choose.</param>
+    /// <param name="symbols">Off for the few sites that refuse every symbol.</param>
+    public static string Make(int length = Length, bool symbols = true)
     {
-        string[] groups = [Upper, Lower, Digits, Symbols];
+        string[] groups = symbols ? [Upper, Lower, Digits, Symbols] : [Upper, Lower, Digits];
         var all = string.Concat(groups);
 
         // One from every group first, because many sites insist on it. The rest come from
-        // everything, then the whole lot is shuffled so those four are not always in front.
-        var chars = new char[Length];
+        // everything, then the whole lot is shuffled so those are not always in front.
+        var chars = new char[length];
         for (int i = 0; i < groups.Length; i++) chars[i] = Pick(groups[i]);
-        for (int i = groups.Length; i < Length; i++) chars[i] = Pick(all);
+        for (int i = groups.Length; i < length; i++) chars[i] = Pick(all);
         RandomNumberGenerator.Shuffle(chars.AsSpan());
 
         return new string(chars);

@@ -524,6 +524,7 @@ internal static class KeyWrapNames
 /// once (the chip refused with NTE_PERM and its counter went up by one), and ChipPinTests
 /// covers what the app does with a refusal.
 /// </summary>
+[Collection("chip")]
 public class DeviceSecretTests : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "pv-dev-" + Guid.NewGuid().ToString("N")[..8]);
@@ -534,7 +535,7 @@ public class DeviceSecretTests : IDisposable
     /// when that probe broke, these tests asked it, heard "no chip", and passed on the fallback.
     /// </summary>
     private static bool ChipPresent()
-        => Tbsi_GetDeviceInfo(Marshal.SizeOf<TpmInfo>(), out var info) == 0 && info.TpmVersion == 2;
+        => OperatingSystem.IsWindows() && Tbsi_GetDeviceInfo(Marshal.SizeOf<TpmInfo>(), out var info) == 0 && info.TpmVersion == 2;
 
     [DllImport("tbs.dll")] private static extern int Tbsi_GetDeviceInfo(int size, out TpmInfo info);
     [StructLayout(LayoutKind.Sequential)] private struct TpmInfo { public int StructVersion, TpmVersion, TpmInterfaceType, TpmImpRevision; }
@@ -563,6 +564,7 @@ public class DeviceSecretTests : IDisposable
     public void The_secret_is_not_sitting_in_the_sealed_bytes_in_the_clear()
     {
         var made = DeviceSecret.Create(Pin);
+        if (made.Protection == DeviceProtection.UserFile) return;   // Linux with no chip: only the file's permissions protect it, as the app says
         Assert.DoesNotContain(Convert.ToHexString(made.Secret), Convert.ToHexString(made.Sealed));
     }
 
