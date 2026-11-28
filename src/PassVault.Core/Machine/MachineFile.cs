@@ -77,15 +77,27 @@ public static class MachineStore
     /// creates in AppData redirected into a private folder that is deleted on uninstall - and the
     /// spare copy of the vault is exactly what must survive that. Not Documents either: Windows 11
     /// backs Documents up to OneDrive by default. Not roaming, because this belongs to one PC.
+    ///
+    /// On Linux: ~/.local/share/passvault ($XDG_DATA_HOME), where Linux keeps each program's data.
     /// </summary>
-    public static string DefaultFolder => FolderToUse(HomeFolder, OldDefaultFolder);
+    public static string DefaultFolder => OperatingSystem.IsWindows()
+        ? FolderToUse(HomeFolder, OldDefaultFolder)
+        : Path.Combine(Known(Environment.SpecialFolder.LocalApplicationData), "passvault");
 
     private static string HomeFolder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "PassVault");
+        Path.Combine(Known(Environment.SpecialFolder.UserProfile), "PassVault");
 
     /// <summary>Where versions before 1.0.2 kept it.</summary>
     public static string OldDefaultFolder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PassVault");
+        Path.Combine(Known(Environment.SpecialFolder.LocalApplicationData), "PassVault");
+
+    /// <summary>
+    /// A standard folder, whether or not it exists yet. Plain GetFolderPath answers "" for one that
+    /// does not - and on a fresh Linux account ~/.local/share may not, which made this PC's folder
+    /// the relative path "passvault": machine.pvm written into whatever folder you were in.
+    /// </summary>
+    public static string Known(Environment.SpecialFolder folder)
+        => Environment.GetFolderPath(folder, Environment.SpecialFolderOption.DoNotVerify);
 
     /// <summary>
     /// The new place - unless this PC is still set up in the old one and not in the new: the move
@@ -103,6 +115,7 @@ public static class MachineStore
     /// </summary>
     public static void MoveFromOldPlace(string? oldFolder = null, string? newFolder = null)
     {
+        if (oldFolder is null && !OperatingSystem.IsWindows()) return;   // Linux never had an old place
         oldFolder ??= OldDefaultFolder;
         newFolder ??= HomeFolder;
         if (!Directory.Exists(oldFolder) || Directory.Exists(newFolder)) return;
@@ -116,6 +129,24 @@ public static class MachineStore
             // Something had a file open. Nothing moved; the next start tries again, and until
             // then FolderToUse keeps using the old folder. Starting up matters more than moving today.
         }
+    }
+
+    /// <summary>
+    /// This folder holds the PIN slot and the spare copy of the vault. On Linux a new folder is
+    /// readable by everyone unless told otherwise, so it is made yours alone - and put right if
+    /// it already exists. Windows' profile folder is private already.
+    /// </summary>
+    public static void CreatePrivateFolder(string folder)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(folder);
+            return;
+        }
+
+        const UnixFileMode yoursAlone = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        Directory.CreateDirectory(folder, yoursAlone);
+        File.SetUnixFileMode(folder, yoursAlone);
     }
 
     public static string PathIn(string folder) => Path.Combine(folder, FileName);
@@ -156,7 +187,7 @@ public static class MachineStore
 
     public static void Write(string folder, MachineFile machine)
     {
-        Directory.CreateDirectory(folder);
+        CreatePrivateFolder(folder);
         VaultStorage.WriteFileSafely(PathIn(folder), JsonSerializer.SerializeToUtf8Bytes(machine, Json));
     }
 
@@ -170,7 +201,7 @@ public static class MachineStore
     /// </summary>
     public static void WriteMirrorVault(string folder, byte[] vault)
     {
-        Directory.CreateDirectory(folder);
+        CreatePrivateFolder(folder);
         KeepSpareOfAnotherVault(folder, VaultFile.ReadHeader(vault).VaultId);
         VaultStorage.WriteFileSafely(MirrorVaultPathIn(folder), vault);
     }

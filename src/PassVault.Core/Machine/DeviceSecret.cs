@@ -20,6 +20,13 @@ public enum DeviceProtection
     /// the app says so.
     /// </summary>
     Dpapi,
+
+    /// <summary>
+    /// The Linux fallback when there is no TPM: a file only your user can read. Anyone who can
+    /// read your files - logged in as you, or holding your disk - gets it, and nothing but the
+    /// app limits PIN guesses. Weaker, and the app says so.
+    /// </summary>
+    UserFile,
 }
 
 /// <summary>
@@ -39,6 +46,13 @@ public sealed class PinRefusedException(bool lockedOut) : Exception(lockedOut
 }
 
 /// <summary>
+/// This PC has a chip, but PassVault cannot use it - the TPM tools are missing, or the user may not
+/// open it. The message says what to do. Nothing reached the chip, so no PIN try is spent on it,
+/// and it is never "the chip was cleared": setting up again would fail the same way.
+/// </summary>
+public sealed class ChipUnavailableException(string message) : Exception(message);
+
+/// <summary>
 /// A 32-byte secret that belongs to this machine and nowhere else. It is the second of the
 /// three ingredients in the daily unlock.
 ///
@@ -51,8 +65,9 @@ public sealed class PinRefusedException(bool lockedOut) : Exception(lockedOut
 /// The sealed secret is kept in machine.pvm, with the chip's key inside it, wrapped so only this
 /// PC's chip can load it. Windows would otherwise keep the key as a file in AppData, which the
 /// Microsoft Store version redirects and deletes on uninstall.
+///
+/// On Linux the chip is reached through tpm2-tools instead - see <see cref="LinuxChip"/>.
 /// </summary>
-[SupportedOSPlatform("windows")]
 public static class DeviceSecret
 {
     public const int Size = 32;
@@ -67,14 +82,15 @@ public static class DeviceSecret
     public const string LegacyTpmKeyName = "PassVault.DeviceKey";
 
     private const string TpmProviderName = "Microsoft Platform Crypto Provider";
-    private static readonly CngProvider TpmProvider = new(TpmProviderName);
-    private static readonly CngKeyBlobFormat ChipWrapped = new("OpaqueKeyBlob");
+    [SupportedOSPlatform("windows")] private static readonly CngProvider TpmProvider = new(TpmProviderName);
+    [SupportedOSPlatform("windows")] private static readonly CngKeyBlobFormat ChipWrapped = new("OpaqueKeyBlob");
 
     // ---- file format: "PVDS" || kind(1) || payload ----
     private static readonly byte[] Magic = "PVDS"u8.ToArray();
     private const byte LegacyTpm = 0;    // payload: the secret sealed with the named key
     private const byte Dpapi = 1;        // payload: the secret sealed by Windows for this account
     private const byte TpmWithPin = 2;   // payload: keyLength(2) || chip-wrapped key || sealed secret
+    // 3 and 4 are Linux's - see LinuxChip.
 
     // Checked on a real chip: a wrong PIN comes back as NTE_PERM, and the chip counts it.
     private const int NtePerm = unchecked((int)0x80090010);
@@ -110,6 +126,8 @@ public static class DeviceSecret
     public static (byte[] Secret, DeviceProtection Protection) Open(byte[] sealedSecret, string pin)
     {
         var (kind, payload) = Unpack(sealedSecret);
+        if (!OperatingSystem.IsWindows()) return LinuxChip.Open(kind, payload, pin);
+
         return kind switch
         {
             TpmWithPin => (OpenWithPin(payload, pin), DeviceProtection.Tpm),
@@ -131,6 +149,8 @@ public static class DeviceSecret
     /// </summary>
     public static void UpgradeIfOld(string folder, string provenPin)
     {
+        if (!OperatingSystem.IsWindows()) return;   // Linux set-ups start out in today's format
+
         try
         {
             var machine = MachineStore.Read(folder);
@@ -174,7 +194,7 @@ public static class DeviceSecret
     {
         var path = Path.Combine(folder, FileName);
         if (File.Exists(path)) File.Delete(path);
-        ForgetLegacyKey();
+        if (OperatingSystem.IsWindows()) ForgetLegacyKey();
     }
 
     /// <summary>
@@ -184,6 +204,8 @@ public static class DeviceSecret
     /// </summary>
     public static bool TpmIsUsable()
     {
+        if (!OperatingSystem.IsWindows()) return LinuxChip.HasChip;
+
         try
         {
             return Tbsi_GetDeviceInfo(Marshal.SizeOf<TpmDeviceInfo>(), out var info) == 0 && info.TpmVersion == TpmVersion20;
@@ -206,6 +228,10 @@ public static class DeviceSecret
     /// seal with something weaker.
     /// </summary>
     private static Made Seal(byte[] secret, string pin)
+        => OperatingSystem.IsWindows() ? SealOnWindows(secret, pin) : LinuxChip.Seal(secret, pin);
+
+    [SupportedOSPlatform("windows")]
+    private static Made SealOnWindows(byte[] secret, string pin)
     {
         if (!TpmIsUsable())
             return new Made(secret, DeviceProtection.Dpapi,
@@ -228,6 +254,7 @@ public static class DeviceSecret
         return new Made(secret, DeviceProtection.Tpm, Pack(TpmWithPin, payload));
     }
 
+    [SupportedOSPlatform("windows")]
     private static byte[] OpenWithPin(byte[] payload, string pin)
     {
         int keyLength = BinaryPrimitives.ReadUInt16LittleEndian(payload);
@@ -246,6 +273,7 @@ public static class DeviceSecret
     /// Windows Hello's PIN too - so every refusal but a wrong PIN counts as "not now". Never "set
     /// this PC up again": a resting chip would refuse that as well.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     private static byte[] AskChip(CngKey key, byte[] sealedSecret)
     {
         using var rsa = new RSACng(key);
@@ -259,6 +287,7 @@ public static class DeviceSecret
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private static byte[] OpenLegacy(byte[] sealedSecret)
     {
         if (!CngKey.Exists(LegacyTpmKeyName, TpmProvider))
@@ -270,6 +299,7 @@ public static class DeviceSecret
         return AskChip(key, sealedSecret);
     }
 
+    [SupportedOSPlatform("windows")]
     private static void ForgetLegacyKey()
     {
         try
@@ -291,6 +321,7 @@ public static class DeviceSecret
     /// every set-up quietly fell back to Windows' own protection. The name exists only for as
     /// long as it takes to make the key and export its wrapped copy.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     private static T WithTemporaryTpmKey<T>(string? pin, Func<CngKey, T> use)
     {
         var key = CngKey.Create(CngAlgorithm.Rsa, "PassVault.Making." + Guid.NewGuid().ToString("N"), TpmKeyParameters(pin));
@@ -305,6 +336,7 @@ public static class DeviceSecret
     }
 
     /// <summary>The private half never leaves the chip; what is exported is wrapped by this chip and useless anywhere else.</summary>
+    [SupportedOSPlatform("windows")]
     private static CngKeyCreationParameters TpmKeyParameters(string? pin)
     {
         var parameters = new CngKeyCreationParameters
@@ -317,10 +349,12 @@ public static class DeviceSecret
         return parameters;
     }
 
+    [SupportedOSPlatform("windows")]
     private static CngProperty PinProperty(string pin)
         => new("SmartCardPin", Encoding.Unicode.GetBytes(pin + '\0'), CngPropertyOptions.None);
 
     /// <summary>.NET's own CngKey.Import refuses this blob type ("Invalid flags"), so call Windows directly.</summary>
+    [SupportedOSPlatform("windows")]
     private static CngKey LoadWrappedKey(byte[] wrappedKey)
     {
         int status = NCryptOpenStorageProvider(out var provider, TpmProviderName, 0);
@@ -335,7 +369,7 @@ public static class DeviceSecret
         }
     }
 
-    private static byte[] Pack(byte kind, byte[] payload)
+    internal static byte[] Pack(byte kind, byte[] payload)
     {
         var file = new byte[Magic.Length + 1 + payload.Length];
         Magic.CopyTo(file, 0);
@@ -344,7 +378,7 @@ public static class DeviceSecret
         return file;
     }
 
-    private static (byte Kind, byte[] Payload) Unpack(byte[] file)
+    internal static (byte Kind, byte[] Payload) Unpack(byte[] file)
     {
         if (file.Length < Magic.Length + 1 || !file.AsSpan(0, Magic.Length).SequenceEqual(Magic))
             throw new InvalidDataException("This machine's own secret is damaged.");

@@ -11,7 +11,7 @@ The user-facing manual is [MANUAL.md](MANUAL.md). How it works underneath is
 
 | | | |
 |---|---|---|
-| **.NET 9 SDK** | required | `dotnet --list-sdks` should show 9.x |
+| **.NET 10 SDK** | required | `dotnet --list-sdks` should show 10.x. (.NET 9 lost Microsoft's support on 10 November 2026.) |
 | **Inno Setup 6** | to build the installer | `winget install JRSoftware.InnoSetup` |
 | **A USB stick** | to test properly | any spare one |
 | **A Mac** | only for the iPhone app | see [ios/README.md](ios/README.md) |

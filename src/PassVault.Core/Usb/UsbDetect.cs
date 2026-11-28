@@ -27,8 +27,9 @@ public static class UsbDetect
         {
             try
             {
-                if (drive.DriveType != DriveType.Removable || !drive.IsReady) continue;
-                sticks.Add(new UsbStick(drive.RootDirectory.FullName, drive.VolumeLabel, drive.AvailableFreeSpace));
+                if (!IsStick(drive.RootDirectory.FullName, drive.DriveType) || !drive.IsReady) continue;
+                var label = OperatingSystem.IsWindows() ? drive.VolumeLabel : Path.GetFileName(drive.Name.TrimEnd('/'));
+                sticks.Add(new UsbStick(drive.RootDirectory.FullName, label, drive.AvailableFreeSpace));
             }
             catch (IOException)
             {
@@ -39,7 +40,40 @@ public static class UsbDetect
             }
         }
 
+        foreach (var place in ExtraPlaces)
+        {
+            if (!Directory.Exists(place) || sticks.Any(s => s.Root == place)) continue;
+
+            // DriveInfo refuses a network path (\\nas\share) or a relative one. Uncaught, that stopped
+            // the Windows app starting at all.
+            long free = 0;
+            try { free = new DriveInfo(place).AvailableFreeSpace; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { }
+            sticks.Add(new UsbStick(place, Path.GetFileName(place.TrimEnd('/', '\\')), free));
+        }
+
         return sticks;
+    }
+
+    /// <summary>
+    /// Folders to treat as a stick as well: a stick mounted somewhere unusual, or a test folder.
+    /// Set by PASSVAULT_STICKS - folders separated by ':' on Linux, ';' on Windows.
+    /// </summary>
+    public static List<string> ExtraPlaces { get; set; } =
+        (Environment.GetEnvironmentVariable("PASSVAULT_STICKS") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
+
+    /// <summary>
+    /// Windows says which drives are removable. Linux does not, reliably - but desktops mount USB
+    /// sticks under /media/you (Ubuntu, Debian) or /run/media/you (Fedora, Arch), and that is what
+    /// their file managers show as removable, so that is what counts here.
+    /// </summary>
+    public static bool IsStick(string root, DriveType type)
+    {
+        if (OperatingSystem.IsWindows()) return type == DriveType.Removable;
+
+        var user = Environment.UserName;
+        return root.StartsWith($"/media/{user}/") || root.StartsWith($"/run/media/{user}/");
     }
 
     /// <summary>The plugged-in stick that has a vault on it, if there is exactly one.</summary>

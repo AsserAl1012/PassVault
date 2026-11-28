@@ -134,7 +134,7 @@ public static class LicenceStore
         var licence = LicenceKey.Verify(text, publicKey);
         if (licence is null) return null;
 
-        Directory.CreateDirectory(folder);
+        Machine.MachineStore.CreatePrivateFolder(folder);
         File.WriteAllText(PathIn(folder), text.Trim());
         return licence;
     }
