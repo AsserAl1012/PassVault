@@ -141,10 +141,14 @@ public static class Enrolment
         {
             // The chip did not look at the PIN, so nothing was learned: give the try back. Kept,
             // ten tries with the right PIN while it rested switched the PIN off.
-            machine.FailedAttempts--;
-            machine.PinDisabled = false;
-            MachineStore.Write(folder, machine);
+            GiveTryBack(folder, machine);
             throw new UnlockException(ChipResting);
+        }
+        catch (ChipUnavailableException)
+        {
+            // The PIN never reached the chip - tools missing, or no permission. Same reasoning.
+            GiveTryBack(folder, machine);
+            throw;
         }
         catch (PinRefusedException)
         {
@@ -182,6 +186,13 @@ public static class Enrolment
         MachineStore.WriteMirrorVault(folder, vault);
 
         return (masterKey, machine);
+    }
+
+    private static void GiveTryBack(string folder, MachineFile machine)
+    {
+        machine.FailedAttempts--;
+        machine.PinDisabled = false;
+        MachineStore.Write(folder, machine);
     }
 
     private static UnlockException WrongPin(MachineFile machine)

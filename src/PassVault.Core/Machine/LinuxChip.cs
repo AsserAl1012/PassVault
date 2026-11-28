@@ -30,8 +30,31 @@ public static class LinuxChip
     public static bool Allowed { get; set; } = true;
 
     /// <summary>A chip to use: a TPM device, or a software TPM the tools have been pointed at.</summary>
-    public static bool HasChip => Allowed &&
-        (Environment.GetEnvironmentVariable("TPM2TOOLS_TCTI") is { Length: > 0 } || File.Exists("/dev/tpmrm0"));
+    public static bool HasChip => Allowed && (PointedElsewhere || File.Exists(Device));
+
+    private const string Device = "/dev/tpmrm0";
+
+    /// <summary>Only tests, or someone who chose to, point the tools anywhere but this PC's chip.</summary>
+    private static bool PointedElsewhere => Environment.GetEnvironmentVariable("TPM2TOOLS_TCTI") is { Length: > 0 };
+
+    /// <summary>
+    /// True when this chip has no lockout password - usual on a PC that only ever ran Linux. Then
+    /// anyone who can reach the chip, root or someone booting another system on this PC, can wipe
+    /// its count of wrong PINs, and the PIN's length is what is left. Windows sets that password;
+    /// Linux distributions do not. Said to the user, never hidden.
+    /// </summary>
+    public static bool LockoutCanBeReset()
+    {
+        try
+        {
+            var said = Encoding.ASCII.GetString(Tool("/", null, "tpm2_getcap", "properties-variable"));
+            return Regex.Match(said, @"lockoutAuthSet:\s*0\b").Success;
+        }
+        catch (Exception ex) when (ex is ChipUnavailableException or CryptographicException)
+        {
+            return false;   // cannot tell - and set-up says what is wrong with the chip on its own
+        }
+    }
 
     /// <summary>
     /// Seal with the chip when there is one, proving the round trip before trusting it. Like
@@ -83,7 +106,17 @@ public static class LinuxChip
         {
             File.WriteAllBytes(Path.Combine(dir, "seal.pub"), payload[2..(2 + pubLength)]);
             File.WriteAllBytes(Path.Combine(dir, "seal.priv"), payload[(2 + pubLength)..]);
-            MakeParent(dir);
+
+            try
+            {
+                MakeParent(dir);
+            }
+            catch (ChipSaidNo)
+            {
+                // The parent is made from the chip's seed, even on a cleared chip - so failing here is
+                // only ever "not now". Escaping as it was, it kept the PIN try it had been counted.
+                throw new PinRefusedException(lockedOut: true);
+            }
 
             try
             {
@@ -133,12 +166,16 @@ public static class LinuxChip
 
     /// <summary>
     /// For the tools' working files. XDG_RUNTIME_DIR is memory only and readable by you alone,
-    /// so the PIN never touches the disk. Deleted as soon as the tools are done.
+    /// so the PIN never touches the disk. Without it (under sudo or su) /dev/shm, also memory -
+    /// never /tmp, which on most distributions is on the disk. Deleted as soon as the tools are done.
     /// </summary>
     private static string PrivateFolder()
     {
         var runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
-        var root = Directory.Exists(runtime) ? runtime : Path.GetTempPath();
+        var root = Directory.Exists(runtime) ? runtime
+                 : Directory.Exists("/dev/shm") ? "/dev/shm"
+                 : throw new ChipUnavailableException("PassVault found no memory-only folder for the chip's working files, "
+                                                      + "and will not put your PIN on the disk. Run it from your desktop session.");
         var dir = Path.Combine(root, "passvault-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return dir;
@@ -155,6 +192,11 @@ public static class LinuxChip
         };
         foreach (var a in args) start.ArgumentList.Add(a);
 
+        // Left to themselves, the tools try one place after another - after this PC's chip, a software
+        // TPM on 127.0.0.1:2321. Any other account on the PC can listen there, and would then be
+        // handed the secret and the PIN while PassVault said "sealed in this PC's chip".
+        if (!PointedElsewhere) start.Environment["TPM2TOOLS_TCTI"] = $"device:{Device}";
+
         Process process;
         try
         {
@@ -162,7 +204,7 @@ public static class LinuxChip
         }
         catch (Win32Exception)
         {
-            throw new InvalidOperationException(
+            throw new ChipUnavailableException(
                 "PassVault needs tpm2-tools to use this PC's TPM chip. Install it - for example: sudo apt install tpm2-tools");
         }
 
@@ -180,14 +222,17 @@ public static class LinuxChip
 
             var said = errors.Result;
             if (said.Contains("Permission denied"))
-                throw new InvalidOperationException(
+                throw new ChipUnavailableException(
                     "PassVault cannot reach this PC's TPM chip. Add yourself to the tss group (sudo usermod -aG tss $USER), then log out and back in.");
             throw new ChipSaidNo(tool, said);
         }
     }
 
-    /// <summary>The chip, or the tools on its behalf, refused. Carries the TPM's own response code.</summary>
-    private sealed class ChipSaidNo(string tool, string said) : Exception($"{tool}: {said.Trim()}")
+    /// <summary>
+    /// The chip, or the tools on its behalf, refused. Carries the TPM's own response code. A kind of
+    /// CryptographicException, so a failed set-up reaches the user as a message, not a crash.
+    /// </summary>
+    private sealed class ChipSaidNo(string tool, string said) : CryptographicException($"{tool}: {said.Trim()}")
     {
         /// <summary>The TPM's response code, the last one the tools printed. -1 when there is none.</summary>
         private int Code

@@ -183,6 +183,51 @@ public class LinuxChipTests(SoftwareTpm tpm) : IClassFixture<SoftwareTpm>
         Assert.Throws<CryptographicException>(() => DeviceSecret.Open(made.Sealed, Pin));
     }
 
+    /// <summary>
+    /// The parent key is made before the PIN is checked. A failure there is only ever "not now" -
+    /// it used to escape as a raw error and keep the PIN try it had been counted.
+    /// </summary>
+    [Fact]
+    public void A_chip_that_cannot_make_the_parent_key_says_not_now()
+    {
+        if (!tpm.Running) return;
+        var made = DeviceSecret.Create(Pin);
+        var real = Environment.GetEnvironmentVariable("TPM2TOOLS_TCTI");
+        Environment.SetEnvironmentVariable("TPM2TOOLS_TCTI", "swtpm:host=127.0.0.1,port=1");   // nothing answers there
+
+        try
+        {
+            Assert.True(Assert.Throws<PinRefusedException>(() => DeviceSecret.Open(made.Sealed, Pin)).LockedOut);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TPM2TOOLS_TCTI", real);
+        }
+    }
+
+    /// <summary>
+    /// With no lockout password, anyone who can reach the chip can wipe its count of wrong PINs - usual
+    /// on a PC that only ever ran Linux. Said to the user, never hidden; and not said when it is set.
+    /// </summary>
+    [Fact]
+    public void A_chip_without_a_lockout_password_is_reported()
+    {
+        if (!tpm.Running) return;
+        Assert.True(LinuxChip.LockoutCanBeReset());   // a fresh software TPM has none
+        Assert.Contains("lockout password", Unlocker.Weakness(DeviceProtection.Tpm));
+
+        tpm.Tool("tpm2_changeauth", "-c", "lockout", "a-lockout-password");
+        try
+        {
+            Assert.False(LinuxChip.LockoutCanBeReset());
+            Assert.Null(Unlocker.Weakness(DeviceProtection.Tpm));
+        }
+        finally
+        {
+            tpm.Tool("tpm2_changeauth", "-c", "lockout", "-p", "a-lockout-password");   // none again, for the other tests
+        }
+    }
+
     /// <summary>The tools' working files hold the PIN for a moment. They must all be gone afterwards.</summary>
     [Fact]
     public void Nothing_is_left_in_the_working_folder()

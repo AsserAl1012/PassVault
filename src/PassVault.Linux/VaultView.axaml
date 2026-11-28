@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PassVault.Linux.VaultView">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="20,10" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Lock  (Ctrl+L)" Click="OnLock" Margin="0" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="State" FontWeight="SemiBold" Text="Vault open" />
+                    <TextBlock x:Name="Detail" FontSize="12" Opacity="0.7" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TextBlock x:Name="Message" DockPanel.Dock="Bottom" Classes="Message" Margin="20,0,20,14" />
+
+        <Grid ColumnDefinitions="320,*" Margin="20,12,20,0">
+            <DockPanel>
+                <TextBox x:Name="SearchBox" DockPanel.Dock="Top" PlaceholderText="Search your credentials  (Ctrl+F)" TextChanged="OnSearchChanged" />
+                <Button DockPanel.Dock="Bottom" Classes="accent" Content="Add credential  (Ctrl+N)" Click="OnAdd" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+                <Panel Margin="0,8,0,0">
+                    <ListBox x:Name="EntryList" SelectionChanged="OnSelectionChanged" />
+                    <TextBlock x:Name="EmptyText" Opacity="0.6" Margin="8" TextWrapping="Wrap" />
+                </Panel>
+            </DockPanel>
+
+            <!-- Sideways too: in a narrow window the fixed-width panel was cut off, Copy buttons and all. -->
+            <ScrollViewer Grid.Column="1" Margin="24,0,0,0" HorizontalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock x:Name="Pick" Opacity="0.6" Text="Pick something on the left, or add a credential." Margin="0,8" />
+                    <!-- A set width: left to size itself, the panel shrank to its narrowest box. -->
+                    <StackPanel x:Name="Details" IsVisible="False" Width="520" HorizontalAlignment="Left">
+                        <TextBlock Classes="Label" Text="Website or app" Margin="0,0,0,4" />
+                        <TextBox x:Name="NameBox" />
+
+                        <!-- Each box comes before its buttons, so Tab goes box, then its buttons. Laid out
+                             the other way round, Tab landed on Copy before reaching the box it copies. -->
+                        <TextBlock Classes="Label" Text="Username" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox x:Name="UsernameBox" />
+                            <Button Grid.Column="1" Content="Copy" Click="OnCopyUsername" Margin="8,0,0,0" />
+                        </Grid>
+
+                        <TextBlock Classes="Label" Text="Email" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox x:Name="EmailBox" />
+                            <Button Grid.Column="1" Content="Copy" Click="OnCopyEmail" Margin="8,0,0,0" />
+                        </Grid>
+
+                        <TextBlock Classes="Label" Text="Password" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBox x:Name="PasswordBox" PasswordChar="•" FontFamily="monospace" />
+                            <Button Grid.Column="1" x:Name="RevealButton" Content="Show" Click="OnReveal" Margin="8,0,0,0" />
+                            <Button Grid.Column="2" Content="Copy" Click="OnCopyPassword" Margin="8,0,0,0" />
+                        </Grid>
+                        <Button Content="Make a strong password" Click="OnMakePassword" />
+
+                        <TextBlock Classes="Label" Text="Notes" />
+                        <TextBox x:Name="NotesBox" AcceptsReturn="True" TextWrapping="Wrap" Height="120" />
+
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button x:Name="SaveButton" Classes="accent" Content="Save  (Ctrl+S)" Click="OnSave" />
+                            <Button x:Name="DeleteButton" Content="Delete" Click="OnDeleteAsked" />
+                        </WrapPanel>
+                        <WrapPanel x:Name="ConfirmDelete" IsVisible="False" Margin="0,8,0,0">
+                            <TextBlock x:Name="ConfirmText" VerticalAlignment="Center" Margin="0,8,12,0" />
+                            <Button Content="Delete for good" Click="OnDeleteConfirmed" />
+                            <Button Content="Keep it" Click="OnDeleteCancelled" />
+                        </WrapPanel>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</UserControl>

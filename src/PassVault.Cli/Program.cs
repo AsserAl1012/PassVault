@@ -50,8 +50,9 @@ catch (UnlockException ex)
     Console.WriteLine($"\n{ex.Message}");
     return 1;
 }
-catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException or InvalidDataException or ArgumentException
-                               or System.Security.Cryptography.CryptographicException or PinRefusedException)
+catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or InvalidDataException
+                               or ArgumentException or System.Text.Json.JsonException or System.Security.Cryptography.CryptographicException
+                               or PinRefusedException or ChipUnavailableException or ChipLostException or SaveRefusedException)
 {
     Console.WriteLine($"\n{ex.Message}");
     return 1;
@@ -189,21 +190,12 @@ static int Enrol(string root)
 
     var pin = NewPin();
 
-    var device = DeviceSecret.Create(pin);
-    var (machine, _) = Enrolment.Enrol(folder, root, phrase, pin, device.Secret, device.Protection, device.Sealed);
+    var (_, protection) = Unlocker.SetUpThisPc(folder, root, phrase, pin);
 
     Console.WriteLine($"\nThis PC is set up. From now on: stick in, PIN, done.");
-    Console.WriteLine($"  machine secret   {Describe(machine.Protection)}");
+    Console.WriteLine($"  machine secret   {Describe(protection)}");
     Console.WriteLine($"  spare vault      {MachineStore.MirrorVaultPathIn(folder)}");
-
-    if (machine.Protection != DeviceProtection.Tpm)
-        Console.WriteLine($"""
-
-            Heads up: no usable TPM was found, so this PC's secret is {Describe(machine.Protection)}
-            instead of sealed in the chip. That is weaker - someone who can log in as you can
-            get it. Everything still works; it just leans more on the PIN.
-            """);
-
+    if (Unlocker.Weakness(protection) is { } weakness) Console.WriteLine($"\nHeads up: {weakness}");
     return 0;
 }
 
@@ -242,6 +234,7 @@ static int Status(string root)
     Console.WriteLine($"  wrong tries     {machine.FailedAttempts} of {Enrolment.MaxAttempts}");
     Console.WriteLine($"  last seen       epoch {machine.HighestEpochSeen}, revision {machine.HighestRevisionSeen}");
     Console.WriteLine($"  spare vault     {(MachineStore.HasMirrorVault(folder) ? "yes" : "MISSING")}");
+    if (Unlocker.Weakness(machine.Protection) is { } weakness) Console.WriteLine($"  heads up        {weakness}");
     return 0;
 }
 
@@ -281,33 +274,26 @@ static int List(string root)
 
 static int Add(string root)
 {
-    var (vault, masterKey) = Open(root);
-    var entries = VaultFile.ReadEntries(vault, masterKey);
+    var (_, masterKey) = Open(root);
 
     Console.WriteLine();
-    entries.Add(new Entry
+    var entry = new Entry
     {
         Name = Required("Website or app"),
         Username = Optional("Username"),
         Email = Optional("Email"),
         Password = Optional("Password"),
         Notes = Optional("Notes"),
-    });
+    };
 
-    var folder = MachineStore.DefaultFolder;
-    var saved = VaultFile.Save(vault, masterKey, entries, Enrolment.RevisionSeen(folder, VaultFile.ReadHeader(vault)));
-    var where = "on the stick and in the spare copy here";
-    try
-    {
-        Enrolment.SaveVault(folder, root, saved);
-    }
-    catch (SpareCopyException behind)
-    {
-        Console.WriteLine($"\n{behind.Message}");   // saved all the same - the stick has it
-        where = "on the stick";
-    }
+    // The stick is read again only now, after the questions - saving the copy read before them wrote
+    // over anything the app had saved in the meantime. OpenVault checks and saves the safe way.
+    var vault = new OpenVault(MachineStore.DefaultFolder, root, masterKey);
+    var warning = vault.Add(entry);
+    if (warning is not null) Console.WriteLine($"\n{warning}");   // saved all the same - the stick has it
 
-    Console.WriteLine($"\nSaved. {entries.Count(e => !e.Deleted)} credential(s), {where}.");
+    Console.WriteLine($"\nSaved. {vault.Living.Count()} credential(s), "
+                      + (warning is null ? "on the stick and in the spare copy here." : "on the stick."));
     return 0;
 }
 
@@ -354,8 +340,7 @@ static (byte[] Vault, byte[] MasterKey) Open(string root)
         }
 
         var pin = AskPin("PIN");
-        var (masterKey, _) = Enrolment.UnlockWithPin(folder, root, pin, typed => DeviceSecret.Open(folder, typed).Secret);
-        DeviceSecret.UpgradeIfOld(folder, pin);
+        var masterKey = Unlocker.WithPin(folder, root, pin);
         return (VaultStorage.ReadVault(root), masterKey);
     }
 
@@ -453,8 +438,8 @@ static string ReadLineOrStop()
 static string? Optional(string label)
 {
     Console.Write($"  {label} (leave blank to skip): ");
-    var value = Console.ReadLine();
-    return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    var value = Console.ReadLine() ?? "";
+    return value.Length == 0 ? null : value;   // exactly as typed: spaces in a password are part of it
 }
 
 /// <summary>The settings for this run - read once at the start, used by the commands above.</summary>

@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PassVault.Linux.UnlockView">
+    <DockPanel>
+        <!-- Where things stand: the stick, and this PC. -->
+        <Border DockPanel.Dock="Top" Padding="32,18" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+            <StackPanel>
+                <TextBlock x:Name="State" FontSize="13" FontWeight="SemiBold" Text="PassVault" />
+                <TextBlock x:Name="Detail" FontSize="12" Opacity="0.7" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="Message" DockPanel.Dock="Bottom" Classes="Message" Margin="32,0,32,24" MaxWidth="560"
+                   HorizontalAlignment="Left" />
+
+        <Panel>
+            <StackPanel x:Name="NoStickPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="Plug your PassVault stick in" />
+                <TextBlock x:Name="WhereText" Classes="Sub" />
+            </StackPanel>
+
+            <StackPanel x:Name="NewStickPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="There is no vault on this stick yet" />
+                <TextBlock Classes="Sub" Text="Setting it up makes an empty vault there and shows you your 12 words, once." />
+                <Button x:Name="SetUpButton" Classes="accent" Content="Set up this stick" Click="OnSetUpStick" />
+            </StackPanel>
+
+            <StackPanel x:Name="WordsPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="Write these 12 words down, on paper" />
+                <TextBlock Classes="Sub" Text="They are shown once and stored nowhere. They are the only way back in if this stick is lost or broken." />
+                <UniformGrid x:Name="WordsGrid" Columns="3" Margin="0,4,0,12" />
+                <CheckBox x:Name="WrittenDown" Content="I have written them down" IsCheckedChanged="OnWrittenDownChanged" />
+                <Button x:Name="WordsNext" Classes="accent" Content="Continue" IsEnabled="False" Click="OnWordsDone" />
+            </StackPanel>
+
+            <StackPanel x:Name="EnrolPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="Set this PC up" />
+                <TextBlock Classes="Sub" Text="Type your 12 words once. After this, your stick and a PIN are all you need on this PC." />
+                <TextBox x:Name="PhraseBox" Height="86" Width="520" TextWrapping="Wrap" AcceptsReturn="False" FontFamily="monospace" />
+                <WrapPanel>
+                    <Button Classes="accent" Content="Continue" Click="OnEnrolPhrase" />
+                    <!-- If setting up fails - a chip that is resting, say - the vault must still open. -->
+                    <Button Content="Just open my vault with my 12 words" Click="OnUsePhraseInstead" />
+                </WrapPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="PinSetupPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="Choose a PIN" />
+                <TextBlock x:Name="PinRule" Classes="Sub" />
+                <TextBlock Classes="Label" Text="PIN" />
+                <TextBox x:Name="NewPinBox" Width="220" HorizontalAlignment="Left" PasswordChar="•" MaxLength="12" />
+                <TextBlock Classes="Label" Text="Type it again" />
+                <TextBox x:Name="NewPinAgainBox" Width="220" HorizontalAlignment="Left" PasswordChar="•" MaxLength="12" KeyDown="OnPinSetupKey" />
+                <Button Classes="accent" Content="Finish setting up" Click="OnPinChosen" />
+            </StackPanel>
+
+            <StackPanel x:Name="PinPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="Enter your PIN" />
+                <TextBox x:Name="PinBox" Width="240" HorizontalAlignment="Left" FontSize="24" PasswordChar="•" MaxLength="12"
+                         TextChanged="OnPinTyped" KeyDown="OnPinKey" />
+                <Button x:Name="UseWordsButton" Content="Use my 12 words instead" Click="OnUsePhraseInstead" />
+            </StackPanel>
+
+            <StackPanel x:Name="PhrasePanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock Classes="Heading" Text="Your 12 words" />
+                <TextBlock Classes="Sub" Text="This works even if the PIN has been switched off, and it switches it back on." />
+                <TextBox x:Name="RecoveryBox" Height="86" Width="520" TextWrapping="Wrap" FontFamily="monospace" />
+                <WrapPanel>
+                    <Button Classes="accent" Content="Open my vault" Click="OnPhraseUnlock" />
+                    <Button Content="Back" Click="OnBack" />
+                </WrapPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="BusyPanel" Classes="Panel" HorizontalAlignment="Left">
+                <TextBlock x:Name="BusyText" Classes="Heading" />
+                <ProgressBar IsIndeterminate="True" Width="320" HorizontalAlignment="Left" />
+            </StackPanel>
+        </Panel>
+    </DockPanel>
+</UserControl>

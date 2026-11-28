@@ -105,8 +105,10 @@ public sealed class OpenVault
             onDisk = VaultStorage.ReadVault(StickRoot);
             header = VaultFile.ReadHeader(onDisk);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex)
         {
+            // Every failure here, as in the Windows window: a damaged header (JsonException) escaped as
+            // a raw error and took the terminal app down with the user's edit in it.
             throw new SaveRefusedException($"Could not reach your stick - {Plain(ex)}. Nothing was written.");
         }
 
@@ -131,6 +133,11 @@ public sealed class OpenVault
             throw new SaveRefusedException("The vault on your stick has been changed or damaged since it was opened - "
                                            + "it no longer matches its own seal. Nothing was written.");
         }
+        catch (Exception ex)
+        {
+            // RevisionSeen reads this PC's machine.pvm, which can be busy or damaged.
+            throw new SaveRefusedException($"Could not save - {Plain(ex)}. Nothing was written.");
+        }
 
         string? warning = null;
         try
@@ -141,7 +148,7 @@ public sealed class OpenVault
         {
             warning = behind.Message;   // saved: the stick has it, only this PC's copy is behind
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
             throw new SaveRefusedException($"Could not save - {Plain(ex)}. Is your stick still plugged in?");
         }
@@ -156,7 +163,7 @@ public sealed class OpenVault
         FileNotFoundException => "there is no vault there",
         DirectoryNotFoundException => "the stick is not there any more",
         UnauthorizedAccessException => "this PC would not let PassVault write to it",
-        InvalidDataException => "the file there is damaged",
+        InvalidDataException or System.Text.Json.JsonException => "the file there is damaged",
         _ => "the stick stopped responding",
     };
 

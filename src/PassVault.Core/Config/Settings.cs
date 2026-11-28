@@ -128,7 +128,8 @@ public sealed class Settings
             var items = SplitList(raw[1..^1]).Select(Text).ToList();
             if (items.All(i => i is not null)) return items!;
         }
-        Problems.Add($"{v.Where}: {key} should be a list of text, for example [\"/mnt/usb\"]. It was ignored.");
+        Problems.Add($"{v.Where}: {key} should be a list of text, for example [\"/mnt/usb\"] - for a path with \\ in it, "
+                     + "use single quotes: ['D:\\Sticks']. It was ignored.");
         return null;
     }
 
@@ -157,11 +158,17 @@ public sealed class Settings
             }
 
             var key = line[..eq].Trim();
-            values[section.Length == 0 ? key : $"{section}.{key}"] = (line[(eq + 1)..].Trim(), where);
+            var full = section.Length == 0 ? key : $"{section}.{key}";
+            if (values.TryGetValue(full, out var earlier))
+                problems.Add($"{where}: {full} is set twice - this line wins over {earlier.Item2}.");
+            values[full] = (line[(eq + 1)..].Trim(), where);
         }
     }
 
-    /// <summary>"text" with \" \\ \n \t, or 'text' taken exactly as written. Null when it is neither.</summary>
+    /// <summary>
+    /// "text" with \" \\ \n \t, or 'text' taken exactly as written. Null when it is neither - including
+    /// "D:\Sticks", where \S is no escape: read as written it became "D:Sticks" and was never found.
+    /// </summary>
     private static string? Text(string raw)
     {
         raw = raw.Trim();
@@ -172,7 +179,9 @@ public sealed class Settings
         for (int i = 1; i < raw.Length - 1; i++)
         {
             if (raw[i] != '\\' || i + 1 >= raw.Length - 1) { s.Append(raw[i]); continue; }
-            s.Append(raw[++i] switch { 'n' => '\n', 't' => '\t', var c => c });
+            var c = raw[++i] switch { 'n' => '\n', 't' => '\t', '\\' => '\\', '"' => '"', _ => '\0' };
+            if (c == '\0') return null;
+            s.Append(c);
         }
         return s.ToString();
     }
@@ -196,10 +205,13 @@ public sealed class Settings
     {
         var item = new StringBuilder();
         char? quote = null;
+        bool escaped = false;
         foreach (char c in inside)
         {
             if (quote is null && c == ',') { if (item.ToString().Trim().Length > 0) yield return item.ToString(); item.Clear(); continue; }
-            if (quote is null && c is '"' or '\'') quote = c;
+            if (escaped) escaped = false;   // \" inside "..." does not end it
+            else if (quote == '"' && c == '\\') escaped = true;
+            else if (quote is null && c is '"' or '\'') quote = c;
             else if (c == quote) quote = null;
             item.Append(c);
         }

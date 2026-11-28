@@ -16,8 +16,8 @@ namespace PassVault.Cli;
 /// <summary>
 /// PassVault full screen in a terminal - run passvault with nothing after it. The same ways in
 /// and the same rules as the window app, all from the keyboard: the stick is noticed on its own,
-/// the PIN opens the vault the moment its last digit lands, and every change goes through
-/// OpenVault, so it saves exactly as the app does.
+/// the PIN opens the vault the moment its last digit lands, the way in is decided by Unlocker and
+/// every change goes through OpenVault - the same code the Linux window app uses.
 /// </summary>
 internal sealed class Tui
 {
@@ -27,7 +27,8 @@ internal sealed class Tui
     private readonly Settings _settings;
     private readonly string _folder = MachineStore.DefaultFolder;
     private readonly Window _window = new() { Title = "PassVault" };
-    private readonly Label _message = new() { X = 1, Y = Pos.AnchorEnd(2), Width = Dim.Fill(1) };
+    // Two lines, wrapped: the honest notices about this PC's chip are longer than one line.
+    private readonly Label _message = new() { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(1), Height = 2 };
 
     private UsbStick? _stick;
     private OpenVault? _vault;
@@ -46,11 +47,20 @@ internal sealed class Tui
     /// <summary>What PassVault put on the clipboard. Only this is ever wiped - never anything you copied yourself.</summary>
     private string? _onClipboard;
 
+    /// <summary>Which copy the newest wipe timer belongs to. An older copy's timer wiped a newer copy early.</summary>
+    private int _copies;
+
     /// <summary>
-    /// The vault screen's one-letter keys, asked about every key before any view sees it. On the
-    /// list itself they never arrived: its type-to-jump search swallowed every letter.
+    /// The current screen's keys, asked about every key before any view sees it. On the vault list
+    /// they never arrived otherwise: its type-to-jump search swallowed every letter.
     /// </summary>
     private Func<Key, bool>? _shortcuts;
+
+    /// <summary>
+    /// Set while a credential is being edited: lock saves it first, and says how that went. Thrown
+    /// away, it could hold a password just made and already set on a website - stored nowhere.
+    /// </summary>
+    private Func<string?>? _saveBeforeLock;
 
     private Tui(IApplication app, Settings settings)
     {
@@ -65,19 +75,18 @@ internal sealed class Tui
         app.Keyboard.KeyDown += (_, key) =>
         {
             tui._lastKey = DateTime.UtcNow;
-            if (tui._shortcuts?.Invoke(key) == true) key.Handled = true;
-        };
-        tui._window.KeyDown += (_, key) =>
-        {
             if (key == Key.L.WithCtrl && tui._vault is not null) { key.Handled = true; tui.Lock("Locked."); }
+            else if (tui._shortcuts?.Invoke(key) == true) key.Handled = true;
         };
         app.AddTimeout(TimeSpan.FromSeconds(2), () => { tui.Tick(); return true; });
         tui.Refresh();
         app.Run(tui._window);
 
+        var how = tui._saveBeforeLock?.Invoke();   // ended mid-edit: kept, as lock keeps it
         tui._vault?.Close();
         tui.WipeClipboard(wait: true);   // the program is ending - finish the wipe before it does
         tui._window.Dispose();
+        if (how is not null) Console.WriteLine(how.Trim());
         return 0;
     }
 
@@ -92,6 +101,8 @@ internal sealed class Tui
                 Lock($"Locked after {_settings.LockAfterMinutes} minutes without use.");
             else if (_settings.LockWhenStickRemoved && !VaultStorage.IsSetUp(_vault.StickRoot))
                 Lock("Locked - your stick was taken out.");
+            else if (_settings.LockWhenScreenLocks && ScreenLock.IsLocked())
+                Lock("Locked - your screen was locked.");
             return;
         }
 
@@ -100,28 +111,49 @@ internal sealed class Tui
 
     private void Refresh()
     {
-        var sticks = UsbDetect.Find();
-        var withVault = sticks.FirstOrDefault(s => s.IsSetUp);
-        _stick = withVault ?? sticks.FirstOrDefault();
-
-        var want = withVault is not null ? (MachineStore.IsEnrolled(_folder) ? "pin" : "enrol")
-                 : _stick is not null ? "new-stick"
-                 : "no-stick";
-        if (_screen == $"{want}|{_stick?.Root}") return;
-        _screen = $"{want}|{_stick?.Root}";
-
-        switch (want)
+        Arrival here;
+        try
         {
-            case "no-stick":
+            here = Unlocker.Look(_folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say("Could not read this PC's setup file just now. Trying again...");
+            return;   // the two-second poll comes back here
+        }
+
+        _stick = here.Stick;
+        // The second stick too: plugged in, or taken out, while this screen is up is a change to say.
+        var screen = $"{here.Situation}|{_stick?.Root}|{here.OtherStick?.Root}";
+        if (_screen == screen) return;
+        _screen = screen;
+
+        switch (here.Situation)
+        {
+            case Situation.NoStick:
                 Show("Plug your PassVault stick in",
                      Text("This screen notices it on its own."),
                      Text($"PassVault looks in /media/{Environment.UserName} and /run/media/{Environment.UserName}, "
                           + "and in sticks.extra_places in your settings ('passvault config')."));
                 break;
-            case "new-stick": NewStickScreen(); break;
-            case "enrol": EnrolScreen(); break;
-            default: PinScreen(); break;
+            case Situation.NewStick: NewStickScreen(); break;
+            case Situation.SetUpThisPc: EnrolScreen(); break;
+            case Situation.SetupDamaged: EnrolScreen("This PC's setup file is damaged. Type your 12 words to set it up again."); break;
+            case Situation.Rekeyed:
+                EnrolScreen("This stick was re-keyed on another PC, so the PIN here no longer fits. "
+                            + "Type the new 12 words to set this PC up again.");
+                break;
+            case Situation.PinOff:
+                PhraseScreen();
+                Say($"The PIN was switched off after {Enrolment.MaxAttempts} wrong tries. Your 12 words switch it back on.");
+                break;
+            default: PinScreen(here); break;
         }
+
+        // Picking one in silence and then saying "that is not your stick" is the worst of both.
+        // Added to the message, not over it: that said why this screen is up.
+        if (here.OtherStick is { } other)
+            Say($"{_message.Text} Two PassVault sticks are plugged in. Using {_stick!.Root}. Unplug it to use {other.Root} instead.".TrimStart());
     }
 
     // ---- setting up a new stick, and this PC ----
@@ -131,13 +163,19 @@ internal sealed class Tui
                 Text("Setting it up makes an empty vault there and shows you your 12 words, once."),
                 Button("Set up this stick", () =>
                 {
-                    var (phrase, _) = VaultStorage.Initialise(_stick.Root);
-                    WordsScreen(phrase);
+                    try
+                    {
+                        var (phrase, _) = VaultStorage.Initialise(_stick.Root);
+                        WordsScreen(phrase);
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+                    {
+                        Say(ex.Message);   // half a vault on it already, or a stick that is full or read-only
+                    }
                 }));
 
     private void WordsScreen(string phrase)
     {
-        _screen = "words";
         var words = phrase.Split(' ');
         var lines = Enumerable.Range(0, 4).Select(row => string.Concat(
             Enumerable.Range(0, 3).Select(col => $"{row + col * 4 + 1,2}. {words[row + col * 4],-12}")));
@@ -147,6 +185,15 @@ internal sealed class Tui
              Text("They are shown once and stored nowhere. They are the only way back in if this stick is lost or broken."),
              Button("I have written them down", () => ChoosePinScreen(phrase)));
         _midFlow = true;
+
+        // Esc is Terminal.Gui's quit key. Pressed here, PassVault ended and the words were never shown
+        // again - the stick was already set up, so nothing could show them.
+        _shortcuts = key =>
+        {
+            if (key != Key.Esc) return false;
+            Say("These words are shown only once. Write them down, then press the button.");
+            return true;
+        };
     }
 
     private void EnrolScreen(string? why = null)
@@ -166,7 +213,6 @@ internal sealed class Tui
 
     private void ChoosePinScreen(string phrase)
     {
-        _screen = "choose-pin";
         int shortest = _settings.MinPinLength;
         var pin = new TextField { Secret = true, Width = 14 };
         var again = new TextField { Secret = true, Width = 14 };
@@ -180,46 +226,30 @@ internal sealed class Tui
                  else if (pin.Text != again.Text) Say("Those two PINs are not the same.");
                  else
                  {
-                     var chosen = pin.Text;
-                     var root = _stick!.Root;
+                     var (chosen, root) = (pin.Text, _stick!.Root);
                      Slowly("Setting this PC up", () =>
                      {
-                         var device = DeviceSecret.Create(chosen);
-                         return Enrolment.Enrol(_folder, root, phrase, chosen, device.Secret, device.Protection, device.Sealed).MasterKey;
+                         var (key, protection) = Unlocker.SetUpThisPc(_folder, root, phrase, chosen);
+                         return (key, Unlocker.Weakness(protection));
                      });
                  }
-             }));
+             }),
+             // A failed set-up - words that do not open this vault, a resting chip - fails the same way
+             // on every try. Without this the only way out was to quit.
+             Button("Back", BackFromSetUp));
         _midFlow = true;
     }
 
     // ---- the everyday unlock ----
 
-    private void PinScreen()
+    private void PinScreen(Arrival here)
     {
-        MachineFile machine;
-        try
-        {
-            machine = MachineStore.Read(_folder);
-        }
-        catch (FileNotFoundException)
-        {
-            EnrolScreen("This PC's setup file is damaged. Type your 12 words to set it up again.");
-            return;
-        }
-
-        if (machine.PinDisabled)
-        {
-            PhraseScreen();
-            Say($"The PIN was switched off after {Enrolment.MaxAttempts} wrong tries. Your 12 words switch it back on.");
-            return;
-        }
-
         var pin = new TextField { Secret = true, Width = 14 };
-        pin.ValueChanged += (_, _) => { if (pin.Text.Length == machine.PinLength) TryPin(pin, machine.PinLength); };
-        pin.Accepting += (_, e) => { e.Handled = true; TryPin(pin, machine.PinLength); };   // Enter
+        pin.ValueChanged += (_, _) => { if (pin.Text.Length == here.PinLength) TryPin(pin, here.PinLength); };
+        pin.Accepting += (_, e) => { e.Handled = true; TryPin(pin, here.PinLength); };   // Enter
 
-        Show("Enter your PIN", pin, Button("Use my 12 words instead", PhraseScreen));
-        if (machine.FailedAttempts > 0) Say($"{Enrolment.MaxAttempts - machine.FailedAttempts} tries left.");
+        Show("Enter your PIN", pin, Button("Use my 12 words instead", () => { if (!_busy) PhraseScreen(); }));
+        if (here.FailedAttempts > 0) Say($"{Enrolment.MaxAttempts - here.FailedAttempts} tries left.");
     }
 
     private void TryPin(TextField box, int pinLength)
@@ -233,19 +263,16 @@ internal sealed class Tui
         if (pin.Length != pinLength) { Say($"Your PIN here is {pinLength} digits."); return; }
 
         var root = _stick!.Root;
-        var wait = Enrolment.DelayBeforeNextTry(MachineStore.Read(_folder).FailedAttempts);
+        if (Unlocker.WaitBeforeTry(_folder) is not { } wait) { _screen = ""; Refresh(); return; }   // set-up gone or mid-save
         Slowly(wait > TimeSpan.Zero ? $"Waiting {wait.TotalSeconds:0} seconds after earlier wrong tries" : "Opening your vault", () =>
         {
             Thread.Sleep(wait);
-            var key = Enrolment.UnlockWithPin(_folder, root, pin, typed => DeviceSecret.Open(_folder, typed).Secret).MasterKey;
-            DeviceSecret.UpgradeIfOld(_folder, pin);
-            return key;
+            return (Unlocker.WithPin(_folder, root, pin), null);
         });
     }
 
     private void PhraseScreen()
     {
-        _screen = "phrase";
         var phrase = new TextField { Width = Dim.Fill(1) };
         Show("Your 12 words",
              Text("This works even if the PIN has been switched off, and it switches it back on."),
@@ -253,25 +280,29 @@ internal sealed class Tui
              Button("Open my vault", () =>
              {
                  if (!Mnemonic.TryParse(phrase.Text, out _, out var problem)) { Say(problem); return; }
-                 var typed = phrase.Text;
-                 var root = _stick!.Root;
-                 Slowly("Opening your vault", () => Enrolment.UnlockWithPhrase(_folder, root, typed));
+                 var (typed, root) = (phrase.Text, _stick!.Root);
+                 Slowly("Opening your vault", () => (Enrolment.UnlockWithPhrase(_folder, root, typed), null));
              }),
              Button("Back", () => { _screen = ""; Refresh(); }));
         _midFlow = true;
     }
 
-    /// <summary>Argon2 takes a moment on purpose. Do it off the screen's thread, so the screen keeps drawing.</summary>
-    private void Slowly(string doing, Func<byte[]> work)
+    /// <summary>
+    /// Argon2 takes a moment on purpose. Do it off the screen's thread, so the screen keeps drawing.
+    /// One at a time: a second press of the same button, or the 12 words during a PIN's wait, started
+    /// a second unlock that later opened the vault again over the user's work.
+    /// </summary>
+    private void Slowly(string doing, Func<(byte[] Key, string? Notice)> work)
     {
+        if (_busy) return;
         _busy = true;
         Say(doing + "...");
         Task.Run(() =>
         {
             try
             {
-                var key = work();
-                _app.Invoke(() => { _busy = false; Opened(key); });
+                var (key, notice) = work();
+                _app.Invoke(() => { _busy = false; Opened(key, notice); });
             }
             catch (Exception ex)
             {
@@ -282,47 +313,65 @@ internal sealed class Tui
 
     private void Failed(Exception ex)
     {
-        switch (ex)
+        if (ex is ChipLostException)
         {
-            case UnlockException or PinRefusedException:
-                Say(ex.Message);
-                if (MachineStore.IsEnrolled(_folder) && MachineStore.Read(_folder).PinDisabled) { _screen = ""; Refresh(); }
-                break;
-            case InvalidOperationException or InvalidDataException or CryptographicException when MachineStore.IsEnrolled(_folder):
-                // The chip was cleared or the board replaced: no PIN can work here again.
-                _screen = "enrol";
-                EnrolScreen("This PC's own secret can no longer be opened - its chip was cleared, or this is another PC. "
-                            + "Type your 12 words to set it up again.");
-                break;
-            default:
-                Say(ex.Message);
-                break;
+            _chipLost = ex.Message;
+            EnrolScreen(ex.Message);   // no PIN can work here again
+            return;
         }
+
+        // The tenth wrong PIN switches it off: show the 12 words - and keep the reason on screen,
+        // ahead of anything the fresh screen says, like a second stick.
+        if (ex is UnlockException && !_midFlow && Unlocker.PinSwitchedOff(_folder))
+        {
+            _screen = "";
+            Refresh();
+            Say($"{ex.Message} {_message.Text}".Trim());
+            return;
+        }
+        Say(ex.Message);
+    }
+
+    /// <summary>
+    /// This PC's own secret will never open again. Its old setup file still reads as "PIN", so Back
+    /// from a failed set-up went to the PIN screen - where no PIN can work, and each try counted.
+    /// </summary>
+    private string? _chipLost;
+
+    /// <summary>Back from choosing a PIN: to the 12 words when the chip is lost, otherwise to whatever fits.</summary>
+    private void BackFromSetUp()
+    {
+        if (_chipLost is { } why) { EnrolScreen(why); return; }
+        _screen = "";
+        Refresh();
     }
 
     // ---- the open vault ----
 
-    private void Opened(byte[] masterKey)
+    private void Opened(byte[] masterKey, string? notice)
     {
         try
         {
             _vault = new OpenVault(_folder, _stick!.Root, masterKey);
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or CryptographicException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or CryptographicException or System.Text.Json.JsonException)
         {
+            CryptographicOperations.ZeroMemory(masterKey);   // only OpenVault.Close did, never reached
             Say($"Could not read your vault - {ex.Message}");
             return;
         }
 
         _lastKey = DateTime.UtcNow;
+        _chipLost = null;   // set up again, or opened with the 12 words
         VaultScreen();
-        if (MachineStore.IsEnrolled(_folder) && MachineStore.Read(_folder).Protection != DeviceProtection.Tpm)
-            Say("No TPM chip checks your PIN on this PC - its secret is only as safe as your files. That is weaker.");
+        if (notice is not null) Say(notice);
     }
 
     private void VaultScreen(Entry? select = null)
     {
         _screen = "vault";
+        _midFlow = false;
+        _saveBeforeLock = null;
         var vault = _vault!;
         List<Entry> shown = [];
         bool reveal = false;
@@ -406,7 +455,9 @@ internal sealed class Tui
             else return false;
             return true;
         };
+
         _window.RemoveAll();
+        (_message.Y, _message.Height) = (Pos.AnchorEnd(3), 2);
         _window.Add(new Label { X = 1, Y = 0, Text = "Search:" }, search, list, details,
                     new Label { X = 1, Y = Pos.AnchorEnd(1), Width = Dim.Fill(1), Text = Keys }, _message);
         Fill(select);
@@ -416,39 +467,77 @@ internal sealed class Tui
 
     private void EditScreen(Entry? entry)
     {
-        _screen = "edit";
         var name = Field(entry?.Name);
         var username = Field(entry?.Username);
         var email = Field(entry?.Email);
         var password = Field(entry?.Password);
         password.Secret = true;
-        var notes = Field(entry?.Notes);
+
+        // Several lines: notes hold recovery codes and imported 2FA secrets. A one-line box quietly
+        // flattened them, and saving any other change then wrote the flattened notes back.
+#pragma warning disable CS0618   // TextView: superseded by a separate editor package, still the least code here
+        var notes = new TextView { Text = entry?.Notes ?? "", Width = Dim.Fill(1), Height = 3, Multiline = true,
+                                   WordWrap = true, TabKeyAddsTab = false };
+#pragma warning restore CS0618
+
+        // Only what was changed is written back. A box can show a value differently from how it is
+        // stored - a tab, a line break - and writing every box changed what nobody touched.
+        var shown = (Name: name.Text, User: username.Text, Mail: email.Text, Pass: password.Text, Notes: notes.Text);
+        bool Changed() => (name.Text, username.Text, email.Text, password.Text, notes.Text) != shown;
+
+        void SaveNow()
+        {
+            if (name.Text.Trim().Length == 0) { Say("Give it a name first."); return; }
+            if (Apply() is { } refused) Say(refused);
+        }
 
         Show(entry is null ? "New credential" : $"Edit {entry.Name}",
              Text("Website or app"), name, Text("Username"), username, Text("Email"), email,
              Text("Password"), password, Text("Notes"), notes,
-             Button("Save", () =>
-             {
-                 if (name.Text.Trim().Length == 0) { Say("Give it a name first."); return; }
-                 Apply();
-             }),
+             Button("Save", SaveNow),
              Button("Make a strong password", () =>
              {
                  password.Text = PasswordGenerator.Make(_settings.GeneratorLength, _settings.GeneratorSymbols);
                  password.Secret = false;
              }),
-             Button("Show / hide password", () => password.Secret = !password.Secret),
+             Button("Show / hide", () => password.Secret = !password.Secret),
              Button("Cancel", () => VaultScreen(entry)));
 
-        void Apply()
+        _saveBeforeLock = () => !Changed() ? null
+                              : name.Text.Trim().Length == 0 ? " What you were editing could NOT be saved: it has no name."
+                              : Apply() is { } refused ? $" What you were editing could NOT be saved: {refused}"
+                              : " What you were editing was saved first.";
+
+        // Copy and Cut in these boxes go through the same door as the copy keys - timer, wipe and all.
+        // The box's own copy put a fresh password on the clipboard with nothing to wipe it.
+        foreach (var box in new[] { username, email, password })
+        {
+            box.KeyBindings.Clear(Command.Copy, Command.Cut, Command.CutToEndOfLine, Command.CutToStartOfLine);
+            box.MouseBindings.Clear(Command.Context);   // its menu offers Copy and Cut too
+        }
+        _shortcuts = key =>
+        {
+            if (key == Key.S.WithCtrl) { SaveNow(); return true; }
+            // Esc is Terminal.Gui's quit key. Pressed here as "cancel", it ended PassVault.
+            if (key == Key.Esc) { Say("Cancel leaves without saving, Ctrl+S saves."); return true; }
+            if (key != Key.C.WithCtrl && key != Key.X.WithCtrl) return false;
+            if (password.HasFocus) Copy(password.Text, "password");
+            else if (username.HasFocus) Copy(username.Text, "username");
+            else if (email.HasFocus) Copy(email.Text, "email");
+            else return false;
+            return true;
+        };
+
+        // Null when saved; otherwise why nothing was written.
+        string? Apply()
         {
             void Write(Entry e)
             {
-                e.Name = name.Text.Trim();
-                e.Username = Typed(username);
-                e.Email = Typed(email);
-                e.Password = Typed(password);
-                e.Notes = Typed(notes);
+                if (name.Text != shown.Name || entry is null) e.Name = name.Text.Trim();
+                if (username.Text != shown.User) e.Username = Typed(username.Text);
+                if (email.Text != shown.Mail) e.Email = Typed(email.Text);
+                if (password.Text != shown.Pass) e.Password = Typed(password.Text);
+                if (notes.Text != shown.Notes) e.Notes = Typed(notes.Text);
             }
 
             try
@@ -459,10 +548,11 @@ internal sealed class Tui
                 else warning = _vault!.Change(entry, Write);
                 VaultScreen(target);
                 Say(warning ?? "Saved to your stick and the spare copy.");
+                return null;
             }
             catch (SaveRefusedException refused)
             {
-                Say(refused.Message);
+                return refused.Message;
             }
         }
     }
@@ -482,11 +572,15 @@ internal sealed class Tui
 
     private void Lock(string why)
     {
+        var save = _saveBeforeLock;
+        _saveBeforeLock = null;
+        var how = save?.Invoke();   // an edit in progress is kept, not thrown away
+
         _vault?.Close();
         _vault = null;
         _screen = "";
         Refresh();
-        Say(why);
+        Say($"{why}{how} {_message.Text}".Trim());   // ahead of what the fresh screen says, like a second stick
     }
 
     // ---- the clipboard ----
@@ -496,7 +590,7 @@ internal sealed class Tui
         if (string.IsNullOrEmpty(value)) { Say($"There is no {what} here to copy."); return; }
 
         bool copied = OperatingSystem.IsLinux()
-            ? TerminalClipboard.Put(value)
+            ? DesktopClipboard.Put(value)
             : _app.Clipboard is { IsSupported: true } clipboard && clipboard.TrySetClipboardData(value);
         if (!copied)
         {
@@ -504,9 +598,18 @@ internal sealed class Tui
             return;
         }
 
+        // The terminal's clipboard tools cannot mark it as a secret, so a clipboard history tool may keep
+        // its own copy after the wipe. Said once - the window app marks it, and they leave it alone.
+        bool first = _copies == 0;
         _onClipboard = value;
-        Say($"Copied the {what} - the clipboard clears in {_settings.ClearClipboardAfterSeconds} seconds.");
-        _app.AddTimeout(TimeSpan.FromSeconds(_settings.ClearClipboardAfterSeconds), () => { WipeClipboard(); return false; });
+        int mine = ++_copies;
+        Say($"Copied the {what} - the clipboard clears in {_settings.ClearClipboardAfterSeconds} seconds."
+            + (first ? " A clipboard history tool, if you use one, may keep its own copy." : ""));
+        _app.AddTimeout(TimeSpan.FromSeconds(_settings.ClearClipboardAfterSeconds), () =>
+        {
+            if (mine == _copies) WipeClipboard();   // a newer copy has its own timer
+            return false;
+        });
     }
 
     /// <summary>
@@ -520,7 +623,7 @@ internal sealed class Tui
 
         var wiping = Task.Run(() =>
         {
-            if (OperatingSystem.IsLinux()) TerminalClipboard.WipeIf(ours);
+            if (OperatingSystem.IsLinux()) DesktopClipboard.WipeIf(ours);
             else if (_app.Clipboard is { } clipboard && clipboard.TryGetClipboardData(out var now) && now == ours)
                 clipboard.TrySetClipboardData("");
         });
@@ -529,21 +632,29 @@ internal sealed class Tui
 
     // ---- building screens ----
 
-    /// <summary>A heading, then each piece below the last, then the message line.</summary>
+    /// <summary>
+    /// A heading, then each piece below the last, then the message line. Buttons in a row go side
+    /// by side, and a label sits right on top of its box: spaced out one under another, the edit
+    /// screen's Save and Cancel were below the bottom of an 80x24 terminal.
+    /// </summary>
     private void Show(string heading, params View[] pieces)
     {
         _shortcuts = null;
+        _saveBeforeLock = null;
         _midFlow = false;
         _window.RemoveAll();
         View above = new Label { X = 1, Y = 0, Text = heading };
         _window.Add(above);
         foreach (var piece in pieces)
         {
-            piece.X = 1;
-            piece.Y = Pos.Bottom(above) + (piece is Button ? 0 : 1);
+            (piece.X, piece.Y) = piece is Button && above is Button ? (Pos.Right(above) + 2, Pos.Top(above))
+                               : (Pos.Absolute(1), Pos.Bottom(above) + (piece is Label || piece == pieces[0] ? 1 : 0));
             _window.Add(piece);
             above = piece;
         }
+        // Four lines on the unlock screens, which end near the top: a reason and the two-sticks
+        // warning together did not fit in two. The edit screen's buttons sit just above two lines.
+        (_message.Y, _message.Height) = _vault is null ? (Pos.AnchorEnd(5), 4) : (Pos.AnchorEnd(3), 2);
         _window.Add(_message);
         Say("");
         (pieces.FirstOrDefault(p => p is TextField) ?? pieces.FirstOrDefault(p => p is Button))?.SetFocus();
@@ -555,7 +666,7 @@ internal sealed class Tui
 
     private static TextField Field(string? value) => new() { Text = value ?? "", Width = Dim.Fill(1) };
 
-    private static string? Typed(TextField field) => field.Text.Length == 0 ? null : field.Text;
+    private static string? Typed(string text) => text.Length == 0 ? null : text;
 
     private Button Button(string text, Action pressed)
     {

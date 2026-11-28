@@ -41,8 +41,16 @@ public static class UsbDetect
         }
 
         foreach (var place in ExtraPlaces)
-            if (Directory.Exists(place) && !sticks.Any(s => s.Root == place))
-                sticks.Add(new UsbStick(place, Path.GetFileName(place.TrimEnd('/', '\\')), new DriveInfo(place).AvailableFreeSpace));
+        {
+            if (!Directory.Exists(place) || sticks.Any(s => s.Root == place)) continue;
+
+            // DriveInfo refuses a network path (\\nas\share) or a relative one. Uncaught, that stopped
+            // the Windows app starting at all.
+            long free = 0;
+            try { free = new DriveInfo(place).AvailableFreeSpace; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { }
+            sticks.Add(new UsbStick(place, Path.GetFileName(place.TrimEnd('/', '\\')), free));
+        }
 
         return sticks;
     }

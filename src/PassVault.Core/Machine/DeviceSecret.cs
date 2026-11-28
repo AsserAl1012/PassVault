@@ -46,6 +46,13 @@ public sealed class PinRefusedException(bool lockedOut) : Exception(lockedOut
 }
 
 /// <summary>
+/// This PC has a chip, but PassVault cannot use it - the TPM tools are missing, or the user may not
+/// open it. The message says what to do. Nothing reached the chip, so no PIN try is spent on it,
+/// and it is never "the chip was cleared": setting up again would fail the same way.
+/// </summary>
+public sealed class ChipUnavailableException(string message) : Exception(message);
+
+/// <summary>
 /// A 32-byte secret that belongs to this machine and nowhere else. It is the second of the
 /// three ingredients in the daily unlock.
 ///

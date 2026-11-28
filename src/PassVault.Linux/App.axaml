@@ -1,0 +1,38 @@
+﻿<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PassVault.Linux.App"
+             RequestedThemeVariant="Default">
+    <Application.Styles>
+        <Fluent2Theme />
+
+        <!-- Plain sizes and spacing, shared by every screen. -->
+        <Style Selector="TextBlock.Heading">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style Selector="TextBlock.Sub">
+            <Setter Property="Opacity" Value="0.75" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style Selector="TextBlock.Label">
+            <Setter Property="Opacity" Value="0.75" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style Selector="TextBlock.Message">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,12,0,0" />
+        </Style>
+        <Style Selector="TextBlock.Bad">
+            <Setter Property="Foreground" Value="#E5534B" />
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="Margin" Value="0,8,8,0" />
+        </Style>
+        <Style Selector="StackPanel.Panel">
+            <Setter Property="MaxWidth" Value="560" />
+            <Setter Property="Margin" Value="32,24" />
+        </Style>
+    </Application.Styles>
+</Application>
